@@ -67,14 +67,14 @@ class AsynchronousStrategy:
         """Computing the new parameters using the formula params_new = params_old + nu * (model_update_params)
             Where nu is influenced by the staleness of the model update and/or the number of samples.
         """
-        nu = 1
+        eta = 1
         if self.use_staleness:
-            nu *= self.get_staleness_weight_coeff_paflm(t_diff=t_diff) # Staleness weighted coefficient
+            eta *= self.get_staleness_weight_coeff_paflm(t_diff=t_diff) # Staleness weighted coefficient
         if self.use_sample_weighing:
-            nu *= self.get_sample_weight_coeff(num_samples)
+            eta *= self.get_sample_weight_coeff(num_samples)
             
-        log(DEBUG, f"t_diff: {t_diff}\nnu: {nu}")
-        return [layer_global + nu * (layer_update - layer_global) for layer_global, layer_update in zip(global_param_arr, model_update_param_arr)]
+        log(DEBUG, f"t_diff: {t_diff}\nnu: {eta}")
+        return [layer_global + eta * (layer_update - layer_global) for layer_global, layer_update in zip(global_param_arr, model_update_param_arr)]
 
     # See paper for more details : https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=9022982
     def get_staleness_weight_coeff_paflm(self, t_diff: float) -> float:

@@ -21,29 +21,23 @@ class AsyncClientManager(SimpleClientManager):
             log(ERROR, "Client not found in free_clients")
             return False
         else:
-            print("Attempting to get a lock to set client to busy")
             with self._cv_free:
-                print("Got a lock to set client to busy")
                 self.free_clients.pop(client_id)
                 self._cv_free.notify_all()
             return True
     
     def set_client_to_free(self, client_id):
-        log(INFO, "Setting client to free with id: %s (thread id: %d)", client_id, threading.get_ident() )
         if client_id not in self.clients.keys():
             log(ERROR, "Client not found in clients")
             return False
         else:
-            print("Attempting to get a lock to set client to free")
             with self._cv_free:
-                print("Got a lock to set client to free")
                 self.free_clients[client_id] = self.clients[client_id]
                 self._cv_free.notify_all()
             return True
 
     # waits for `num_free_clients` to be free
     def wait_for_free(self, num_free_clients: int, timeout: int = 86400) -> bool:
-        log(INFO, "Waiting for %s clients to be free, currently %s are free, thread id %d", num_free_clients, len(self.free_clients), threading.get_ident())
         with self._cv_free:
             return self._cv_free.wait_for(
                 lambda: len(self.free_clients) >= num_free_clients, timeout=5

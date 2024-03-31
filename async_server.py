@@ -116,31 +116,26 @@ class AsyncServer(Server):
                 timeout=timeout,
                 executor=executor
             )
-
-            # Evaluate model using strategy implementation
-            
-            # print("Starting to sleep")
-            # sleep(1)
-            # print("Woke up (turn my swag on)") 
-            # current_round += 1 # No rounds.
+            executor.submit(self.evaluate_centralized, current_round, history) # Evaluate the model on the server side without blocking the sampling (while-)loop
+            executor.submit(self.evaluate_decentralized, current_round, history, timeout) # Evaluate the model on the client side (Distributed) without blocking the sampling (while-)loop
         
         log(INFO, "FL finished")
+        end_time = timeit.default_timer()
+        elapsed = end_time - start_time
+        log(INFO, "FL finished in %s", elapsed)
+        return history
+
+    def evaluate_centralized(self, current_round: int, history: History):
         res_cen = self.strategy.evaluate(current_round, parameters=self.parameters)
         if res_cen is not None:
             loss_cen, metrics_cen = res_cen
-            log(
-                INFO,
-                "fit progress: (%s, %s, %s, %s)",
-                current_round,
-                loss_cen,
-                metrics_cen,
-                timeit.default_timer() - start_time,
-            )
+
             history.add_loss_centralized(server_round=current_round, loss=loss_cen)
             history.add_metrics_centralized(
                 server_round=current_round, metrics=metrics_cen
             )
 
+    def evaluate_decentralized(self, current_round: int, history: History, timeout: Optional[float]):
         # Evaluate model on a sample of available clients
         res_fed = self.evaluate_round(server_round=current_round, timeout=timeout)
         if res_fed is not None:
@@ -152,11 +147,6 @@ class AsyncServer(Server):
                 history.add_metrics_distributed(
                     server_round=current_round, metrics=evaluate_metrics_fed
                 )
-        # Bookkeeping
-        end_time = timeit.default_timer()
-        elapsed = end_time - start_time
-        log(INFO, "FL finished in %s", elapsed)
-        return history
 
     def evaluate_round(
         self,

@@ -71,8 +71,10 @@ class AsyncServer(Server):
         strategy: Strategy,
         client_manager: AsyncClientManager,
         async_strategy: AsynchronousStrategy,
+        total_train_time: int = 85,
     ):
         self.async_strategy = async_strategy
+        self.total_train_time = total_train_time
         super().__init__(*args, strategy=strategy, client_manager=client_manager)
 
     def set_new_params(self, new_params: Parameters):
@@ -104,10 +106,9 @@ class AsyncServer(Server):
         # Run federated learning for num_rounds
         log(INFO, "FL starting")
         start_time = timeit.default_timer()
-        training_time = 15 # make adjustable via object attribute
         current_round = 0
         executor = ThreadPoolExecutor(max_workers=self.max_workers)
-        while timeit.default_timer() - start_time < training_time:
+        while timeit.default_timer() - start_time < self.total_train_time:
 
             # Train model and replace previous global model
             self.fit_round(

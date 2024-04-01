@@ -14,15 +14,14 @@
 # ==============================================================================
 """Flower server."""
 
-import functools
-import threading
+
 import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor
-from threading import Lock
+from threading import Lock, Thread, Timer
 import timeit
 from logging import DEBUG, INFO
 from typing import Dict, List, Optional, Tuple, Union
-from time import sleep
+from time import sleep, time
 
 from flwr.common import (
     Code,
@@ -63,27 +62,31 @@ ReconnectResultsAndFailures = Tuple[
 
 
 class AsyncServer(Server):
-    """Flower server."""
+    """Flower server implementing asynchronous FL."""
 
     def __init__(
         self,
-        *args,
         strategy: Strategy,
         client_manager: AsyncClientManager,
         async_strategy: AsynchronousStrategy,
         total_train_time: int = 85,
+        waiting_interval: int = 5,
     ):
         self.async_strategy = async_strategy
         self.total_train_time = total_train_time
-        super().__init__(*args, strategy=strategy, client_manager=client_manager)
+        # number of seconds waited to start a new set of clients (and evaluate the previous ones)
+        self.waiting_interval = waiting_interval
+        self.strategy = strategy
+        self._client_manager = client_manager
+        # super().__init__(*args, strategy=strategy, client_manager=client_manager)
 
     def set_new_params(self, new_params: Parameters):
         lock = Lock()
         with lock:
             self.parameters = new_params
-        
 
     # pylint: disable=too-many-locals
+
     def fit(self, num_rounds: int, timeout: Optional[float]) -> History:
         """Run federated averaging for a number of rounds."""
         history = History()
@@ -105,20 +108,21 @@ class AsyncServer(Server):
 
         # Run federated learning for num_rounds
         log(INFO, "FL starting")
-        start_time = timeit.default_timer()
-        current_round = 0
         executor = ThreadPoolExecutor(max_workers=self.max_workers)
+        start_time = timeit.default_timer()
+        counter = 1
         while timeit.default_timer() - start_time < self.total_train_time:
-
             # Train model and replace previous global model
             self.fit_round(
-                server_round=current_round,
+                server_round=0,
                 timeout=timeout,
                 executor=executor
             )
-            executor.submit(self.evaluate_centralized, current_round, history) # Evaluate the model on the server side without blocking the sampling (while-)loop
-            executor.submit(self.evaluate_decentralized, current_round, history, timeout) # Evaluate the model on the client side (Distributed) without blocking the sampling (while-)loop
-        
+            self.evaluate_centralized(counter, history)
+            self.evaluate_decentralized(counter, history, timeout)
+            sleep(self.waiting_interval)
+            counter += 1
+
         log(INFO, "FL finished")
         end_time = timeit.default_timer()
         elapsed = end_time - start_time
@@ -126,18 +130,21 @@ class AsyncServer(Server):
         return history
 
     def evaluate_centralized(self, current_round: int, history: History):
-        res_cen = self.strategy.evaluate(current_round, parameters=self.parameters)
+        res_cen = self.strategy.evaluate(
+            current_round, parameters=self.parameters)
         if res_cen is not None:
             loss_cen, metrics_cen = res_cen
 
-            history.add_loss_centralized(server_round=current_round, loss=loss_cen)
+            history.add_loss_centralized(
+                server_round=current_round, loss=loss_cen)
             history.add_metrics_centralized(
                 server_round=current_round, metrics=metrics_cen
             )
 
     def evaluate_decentralized(self, current_round: int, history: History, timeout: Optional[float]):
         # Evaluate model on a sample of available clients
-        res_fed = self.evaluate_round(server_round=current_round, timeout=timeout)
+        res_fed = self.evaluate_round(
+            server_round=current_round, timeout=timeout)
         if res_fed is not None:
             loss_fed, evaluate_metrics_fed, _ = res_fed
             if loss_fed is not None:
@@ -201,7 +208,7 @@ class AsyncServer(Server):
         server_round: int,
         timeout: Optional[float],
         executor: ThreadPoolExecutor
-    ): #-> Optional[Tuple[Optional[Parameters], Dict[str, Scalar], FitResultsAndFailures]]:
+    ):  # -> Optional[Tuple[Optional[Parameters], Dict[str, Scalar], FitResultsAndFailures]]:
         """Perform a single round of federated averaging."""
         # Get clients and their respective instructions from strategy
         client_instructions = self.strategy.configure_fit(
@@ -228,20 +235,19 @@ class AsyncServer(Server):
             server=self,
             executor=executor
         )
-        
 
     def disconnect_all_clients(self, timeout: Optional[float]) -> None:
         """Send shutdown signal to all clients."""
         all_clients = self._client_manager.all()
         clients = [all_clients[k] for k in all_clients.keys()]
         instruction = ReconnectIns(seconds=None)
-        client_instructions = [(client_proxy, instruction) for client_proxy in clients]
+        client_instructions = [(client_proxy, instruction)
+                               for client_proxy in clients]
         _ = reconnect_clients(
             client_instructions=client_instructions,
             max_workers=self.max_workers,
             timeout=timeout,
         )
-
 
     def _get_initial_parameters(self, timeout: Optional[float]) -> Parameters:
         """Get initial parameters from one of the available clients."""
@@ -257,7 +263,8 @@ class AsyncServer(Server):
         log(INFO, "Requesting initial parameters from one random client")
         random_client = self._client_manager.sample(1)[0]
         ins = GetParametersIns(config={})
-        get_parameters_res = random_client.get_parameters(ins=ins, timeout=timeout)
+        get_parameters_res = random_client.get_parameters(
+            ins=ins, timeout=timeout)
         log(INFO, "Received initial parameters from one random client")
         return get_parameters_res.parameters
 
@@ -269,7 +276,7 @@ def reconnect_clients(
 ) -> ReconnectResultsAndFailures:
     """Instruct clients to disconnect and never reconnect."""
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        
+
         submitted_fs = {
             executor.submit(reconnect_client, client_proxy, ins, timeout)
             for client_proxy, ins in client_instructions
@@ -281,7 +288,8 @@ def reconnect_clients(
 
     # Gather results
     results: List[Tuple[ClientProxy, DisconnectRes]] = []
-    failures: List[Union[Tuple[ClientProxy, DisconnectRes], BaseException]] = []
+    failures: List[Union[Tuple[ClientProxy,
+                               DisconnectRes], BaseException]] = []
     for future in finished_fs:
         failure = future.exception()
         if failure is not None:
@@ -308,37 +316,27 @@ def reconnect_client(
 def handle_futures(futures, server):
     for future in futures:
         _handle_finished_future_after_fit(
-            future=future,server=server
+            future=future, server=server
         )
+
 
 def fit_clients(
     client_instructions: List[Tuple[ClientProxy, FitIns]],
     timeout: Optional[float],
     server: AsyncServer,
     executor: ThreadPoolExecutor
-): #-> FitResultsAndFailures:
+):
     """Refine parameters concurrently on all selected clients."""
-    #results: List[Tuple[ClientProxy, FitRes]] = []
-    #failures: List[Union[Tuple[ClientProxy, FitRes], BaseException]] = []
-    
+
     submitted_fs = {
         executor.submit(fit_client, client_proxy, ins, timeout)
         for client_proxy, ins in client_instructions
     }
-    for f in submitted_fs:      
-       f.add_done_callback(
-            lambda ftr: _handle_finished_future_after_fit(ftr, server=server),            
+    for f in submitted_fs:
+        f.add_done_callback(
+            lambda ftr: _handle_finished_future_after_fit(ftr, server=server),
         )
 
-    
-    # finished_fs = concurrent.futures.as_completed(submitted_fs)
-    # executor.submit(
-    #     handle_futures, finished_fs, server
-    # )
-
-
-
-    
 
 def fit_client(
     client: ClientProxy, ins: FitIns, timeout: Optional[float]
@@ -349,40 +347,30 @@ def fit_client(
 
 
 def _handle_finished_future_after_fit(
-    future: concurrent.futures.Future,  # type: ignore
-    #results: List[Tuple[ClientProxy, FitRes]],
-    #failures: List[Union[Tuple[ClientProxy, FitRes], BaseException]],
+    future: concurrent.futures.Future,
     server: AsyncServer
 ) -> None:
     """Convert finished future into either a result or a failure."""
     # Check if there was an exception
-     
+
     failure = future.exception()
     if failure is not None:
         print("Got a failure :(")
-        
-        #failures.append(failure)
         return
+
     print("Got a result :)")
-    # Successfully received a result from a client
     result: Tuple[ClientProxy, FitRes] = future.result()
     clientProxy, res = result
 
     server.client_manager().set_client_to_free(clientProxy.cid)
-    
+
     # Check result status code
     if res.status.code == Code.OK:
-        # Merge into global model.
-        # aggregated_result: Parameters = ndarrays_to_parameters(agg.aggregate([ ( parameters_to_ndarrays(res.parameters), 1) , 
-        #                                                (parameters_to_ndarrays(server.parameters), 1) ])) # 1 is the number of samples and here we just take the average of the parameters (TODO: add staleness and num examples weighing)
-        # parameters_aggregated = aggregated_result
-        # parameters_aggregated = server.async_strategy.weighted_average_fedasync(server.parameters, res.parameters, res.metrics['t_diff'])
-        parameters_aggregated = server.async_strategy.average(server.parameters, res.parameters, res.metrics['t_diff'], res.num_examples)
+        parameters_aggregated = server.async_strategy.average(
+            server.parameters, res.parameters, res.metrics['t_diff'], res.num_examples)
         server.set_new_params(parameters_aggregated)
         return
-    
-    # Not successful, client returned a result where the status code is not OK
-    #failures.append(result)
+
 
 ############################### FOR EVALUATION ####################################
 

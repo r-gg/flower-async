@@ -395,13 +395,14 @@ def _handle_finished_future_after_fit(
         parameters_aggregated = server.async_strategy.average(
             server.parameters, res.parameters, res.metrics['t_diff'], res.num_examples)
         server.set_new_params(parameters_aggregated)
+        
         history.add_metrics_distributed_fit_async(
-            clientProxy.cid, res.metrics, time()
+            clientProxy.cid,{"sample_sizes": res.num_examples, **res.metrics }, timestamp=time()
         )
         
     
     if time() < end_timestamp:
-        log(DEBUG, f"Yippie! Starting the client {clientProxy.cid} again")
+        log(DEBUG, f"Yippie! Starting the client {clientProxy.cid} again \U0001f973")
         new_ins = FitIns(server.parameters, {})
         ftr = executor.submit(fit_client, client=clientProxy, ins=new_ins, timeout=None)
         ftr.add_done_callback(lambda ftr: _handle_finished_future_after_fit(ftr, server, executor, end_timestamp, history))

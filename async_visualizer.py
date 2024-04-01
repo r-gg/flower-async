@@ -27,7 +27,7 @@ class AsyncVisualizer:
 
     def plot(self, folder_name: str):
         self.make_config_specific_visualizations(folder_name)
-        #self.make_global_visualizations(config_specific_folder_name=folder_name)    
+        self.make_global_visualizations(config_specific_folder_name=folder_name)    
 
     def make_centralized_metrics_plot(self, folder_name: str):
         plt.style.use('seaborn-v0_8-whitegrid')
@@ -94,15 +94,7 @@ class AsyncVisualizer:
 
 
     def make_accuracies_per_client_over_time_plot(self, folder_name: str, title_suffix: str = ''):
-        accuracies_per_round_clientwise = []
-        round = 0
-        curr = np.zeros(self.tracker.num_clients)
-        self.tracker.history.metrics_distributed_fit_async['accuracy']
-
-        accuracies_per_round_clientwise.append(curr.copy())
-
         samples_per_client = self.tracker.sample_sizes
-
         n = self.tracker.num_clients
         # Count the number of times each client was trained
         times_started = np.zeros(n)
@@ -150,33 +142,17 @@ class AsyncVisualizer:
         fig.savefig('results/' + folder_name + '/accuracies_per_client_over_time'+title_suffix+'.png')
         plt.clf()
 
-    def make_precisions_per_round_per_clients_plot(self, folder_name: str, precisions, df_acc, title_suffix: str = ''):
-        precisions_per_round_clientwise = []
-        round = 0
-        curr = np.zeros(self.tracker.num_clients)
-        for row in precisions:
-            if row[0] == round:
-                curr[row[1]] = row[3]
-            else:
-                precisions_per_round_clientwise.append(curr.copy())
-                round += 1
-                curr[row[1]] = row[3]
-
-        precisions_per_round_clientwise.append(curr.copy())
-
+    def make_precisions_per_client_over_time_plot(self, folder_name: str, title_suffix: str = ''):
         samples_per_client = self.tracker.sample_sizes
-
-        # Count the number of times each client was sampled
-        times_sampled = df_acc['client_id'].value_counts().sort_index()
-        # if a client was not sampled in a round, then add it with 0
-        for i in range(self.tracker.num_clients):
-            if i not in times_sampled.index:
-                times_sampled[i] = 0
-
         n = self.tracker.num_clients
+        # Count the number of times each client was trained
+        times_started = np.zeros(n)
+        for i in range(self.tracker.num_clients):
+            if str(i) in self.tracker.history.metrics_distributed_fit_async['precision']:
+                times_started[i] = len(self.tracker.history.metrics_distributed_fit_async['precision'][str(i)])
+
         num_rows = 3
         num_cols = np.ceil(n / num_rows).astype(int)
-
         # Create a figure and a set of subplots
         fig, axs = plt.subplots(num_rows, num_cols, figsize=(
             5 * num_cols, 5 * num_rows), constrained_layout=True)
@@ -190,10 +166,17 @@ class AsyncVisualizer:
 
         # Loop through the number of plots
         for i in range(n):
-            axs[i].plot(range(1, rounds + 1),
-                        np.array(precisions_per_round_clientwise)[:, i])
+            if str(i) in self.tracker.history.metrics_distributed_fit_async['precision']:
+                timestamps = [ts for ts,_ in self.tracker.history.metrics_distributed_fit_async['precision'][str(i)]]
+                first_ts = timestamps[0]
+                timestamps = [t - first_ts for t in timestamps]
+                precisions = [val for _,val in self.tracker.history.metrics_distributed_fit_async['precision'][str(i)]]
+            else:
+                timestamps = []
+                precisions = []
+            axs[i].plot(timestamps, precisions)
             axs[i].set_title(
-                f'Client: {i+1}, Samples: {samples_per_client[i]}, Times chosen: {times_sampled[i]}')
+                f'Client: {i+1}, Samples: {samples_per_client[i]}, Times started: {times_started[i]}')
             axs[i].set_xlim(1, rounds)
             axs[i].set_ylim(0, 1)
             axs[i].set_ylabel('precision')
@@ -204,40 +187,21 @@ class AsyncVisualizer:
         for i in range(n, num_rows * num_cols):
             axs[i].axis('off')
 
-        # Save
-        fig.savefig('results/' + folder_name + '/precisions_per_client_per_round'+title_suffix+'.png')
+        # Save the figure
+        fig.savefig('results/' + folder_name + '/precisions_per_client_over_time'+title_suffix+'.png')
         plt.clf()
 
+        
+
+        
     def make_config_specific_visualizations(self, folder_name: str):
         plt.style.use('seaborn-v0_8-whitegrid')
         # Make four subplots in one representing centralized accuracy, loss, precision, recall and save it as a png
         self.make_centralized_metrics_plot(folder_name)
         self.make_accuracies_per_client_over_time_plot(folder_name)
-
-        # self.make_centralized_final_perclass_metrics_plot(folder_name)
-
-        # self.make_target_counts_plot(folder_name)
-
-        # accuracies, df_acc = self.make_accuracies_per_round_per_samples_plot__before_merge(
-        #     folder_name)
-        
-        # precisions, df_prec = self.make_precisions_per_round_per_samples_plot__before_merge(
-        #     folder_name)
-        
-        # accuracies_after_eval, df_acc_after_eval = self.make_accuracies_per_round_per_samples_plot__after_merge(folder_name)
-
-        # precisions_after_eval, df_prec_after_eval = self.make_precisions_per_round_per_samples_plot__after_merge(folder_name)
-
-        # self.make_accuracy_diffs_per_round_per_samples_plot(folder_name)
-
-        # self.make_accuracies_per_round_per_clients_plot(folder_name, accuracies, df_acc, title_suffix=' (Before merge)')
-
-        # self.make_precisions_per_round_per_clients_plot(folder_name, precisions, df_prec, title_suffix=' (Before merge)')
-
-        # self.make_accuracies_per_round_per_clients_plot(folder_name, accuracies_after_eval, df_acc_after_eval, title_suffix=' (After merge)')
-
-        # self.make_precisions_per_round_per_clients_plot(folder_name, precisions_after_eval, df_prec_after_eval, title_suffix=' (After merge)')
-
+        self.make_precisions_per_client_over_time_plot(folder_name)
+        self.make_centralized_final_perclass_metrics_plot(folder_name)
+        self.make_target_counts_plot(folder_name)
 
 
     def make_global_visualizations(self, config_specific_folder_name: str = None):
@@ -442,10 +406,10 @@ class AsyncVisualizer:
             label = tracker.partitioning if 'dirichlet' not in tracker.partitioning else tracker.partitioning + \
                 '(' + str(tracker.alpha) + ')'
             samples_per_class = np.zeros(tracker.num_classes)
-            for round_ids in extract_vals_from_metrics(tracker.history.metrics_distributed_fit['client_ids']):
-                for cid in round_ids:
-                    samples_per_class = samples_per_class + tracker.target_counts[int(cid)]
-            
+            for cid in tracker.history.metrics_distributed_fit_async['accuracy'].keys():
+                times_chosen = len(tracker.history.metrics_distributed_fit_async['accuracy'][cid])
+                samples_per_class = samples_per_class + tracker.target_counts[int(cid)] * times_chosen
+
             axs[i % 2, i // 2].bar(classes, samples_per_class, label=label)
             axs[i % 2, i // 2].set_title('Total number of samples used per class\n' + label)
             axs[i % 2, i // 2].set_xlabel('Class')
@@ -514,56 +478,25 @@ class AsyncVisualizer:
                     + folder_name + '/final_metrics_comparison.png')
         plt.clf()
 
-        # Make a comparison plot for average rounds durations
-        fig, ax = plt.subplots(figsize=(15, 10))
-        avg_round_durations = [
-            # Starting from 1 because of the initial central evaluation round (not training)
-            np.mean(extract_vals_from_metrics(other_tracker.history.metrics_distributed_fit['round_duration'])[1:]) for other_tracker in all_trackers
-        ]
-        labels = [other_tracker.partitioning if 'dirichlet' not in other_tracker.partitioning else other_tracker.partitioning
-                  + '(' + str(other_tracker.alpha) + ')' for other_tracker in all_trackers]
-        ax.bar(labels, avg_round_durations)
-        ax.set_title(
-            f'Average round durations comparison {unique_config[0]} rounds {unique_config[1]} \nclients {unique_config[2]} clients_per_round {unique_config[3]} epochs {unique_config[6]}')
-        ax.set_xlabel('Partitioning')
-        plt.xticks(rotation=45)
-        ax.set_ylabel('Time (s)')
-        plt.savefig('global/' + take_folder_name + '/'
-                    + folder_name + '/avg_round_durations_comparison.png')
-        plt.clf()
-
-        # Make a comparison plot for max and min round durations (bar plot, side by side for each partitioning)
-        fig, ax = plt.subplots(figsize=(15, 10))
-        min_round_durations = [
-            # Starting from 1 because of the initial central evaluation round (not training)
-            np.min(extract_vals_from_metrics(other_tracker.history.metrics_distributed_fit['round_duration'])[1:]) for other_tracker in all_trackers
-        ]
-        max_round_durations = [
-            # Starting from 1 because of the initial central evaluation round (not training)
-            np.max(extract_vals_from_metrics(other_tracker.history.metrics_distributed_fit['round_duration'])[1:]) for other_tracker in all_trackers
-        ]
-        labels = [other_tracker.partitioning if 'dirichlet' not in other_tracker.partitioning else other_tracker.partitioning
-                  + '(' + str(other_tracker.alpha) + ')' for other_tracker in all_trackers]
-        df = pd.DataFrame({'min round duration': min_round_durations,
-                          'max round duration': max_round_durations, 'label': labels})
-        df.plot(kind='bar', x='label', ax=ax, stacked=False)
-        ax.set_title(
-            f'Min and max round durations comparison {unique_config[0]} rounds {unique_config[1]} \nclients {unique_config[2]} clients_per_round {unique_config[3]} epochs {unique_config[6]}')
-        ax.set_xlabel('Partitioning')
-        plt.xticks(rotation=45)
-        ax.set_ylabel('Time (s)')
-        plt.savefig('global/' + take_folder_name + '/' + folder_name
-                    + '/min_max_round_durations_comparison.png')
+        n_samples = [ 
+                sum([
+                    sum([samples for timestamp, samples in cid_dict
+                         ]) for cid_dict in tracker.history.metrics_distributed_fit_async['sample_sizes'].values()
+                ])
+             for tracker in all_trackers ] 
         
-        samples = [sum([sum(x) for _, x in tracker.history.metrics_distributed_fit['sample_sizes']]) for tracker in all_trackers ]
+        log(DEBUG, f"n_samples: {n_samples}")
         labels = [other_tracker.partitioning if 'dirichlet' not in other_tracker.partitioning else other_tracker.partitioning
                   + '(' + str(other_tracker.alpha) + ')' for other_tracker in all_trackers]
-        ax.bar(labels, samples)
-        ax.set_title(
+        plt.bar(labels, n_samples)
+        plt.title(
             f'Total samples seen {unique_config[0]} rounds {unique_config[1]} \nclients {unique_config[2]} clients_per_round {unique_config[3]} epochs {unique_config[6]}')
-        ax.set_xlabel('Partitioning')
+        plt.xlabel('Partitioning')
         plt.xticks(rotation=45)
-        ax.set_ylabel('Time (s)')
+        plt.ylabel('Number of samples seen')
         plt.savefig('global/' + take_folder_name + '/'
                     + folder_name + '/total_samples_seen_comparison.png')
         plt.clf()
+        
+
+        # NOTE: If there are multiple values for the **same label** the plot will be drawn over the previous plot.

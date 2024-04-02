@@ -225,8 +225,8 @@ class AsyncVisualizer:
                     "num_clients": ot.num_clients,
                     "max_workers": ot.max_workers,
                 } for ot in other_trackers]
-        unique_configs_values = set([ tuple(config.values()) for config in configs ] ) 
-        unique_configs = [ config for config in configs if tuple(config.values()) in unique_configs_values]
+        unique_configs = [i for n, i in enumerate(configs)
+            if i not in configs[:n]]
         log(DEBUG, "unique_configs: %s", unique_configs)
         varied_params = {
             # 'partitioning': 'part' , 

@@ -147,6 +147,18 @@ class AsyncServer(Server):
                 timestamp=time(), metrics=metrics_cen
             )
 
+    def evaluate_centralized_async(self, history: AsyncHistory):
+        res_cen = self.strategy.evaluate(
+            0, parameters=self.parameters)
+        if res_cen is not None:
+            loss_cen, metrics_cen = res_cen
+
+            history.add_loss_centralized_async(
+                timestamp=time(), loss=loss_cen)
+            history.add_metrics_centralized_async(
+                timestamp=time(), metrics=metrics_cen
+            )
+
     def evaluate_decentralized(self, current_round: int, history: History, timeout: Optional[float]):
         """Evaluate model on a sample of available clients
         NOTE: Only call this method if clients are started periodically.
@@ -399,7 +411,7 @@ def _handle_finished_future_after_fit(
         history.add_metrics_distributed_fit_async(
             clientProxy.cid,{"sample_sizes": res.num_examples, **res.metrics }, timestamp=time()
         )
-        
+        server.evaluate_centralized_async(history) # Evaluate the global model after the merge
     
     if time() < end_timestamp:
         log(DEBUG, f"Yippie! Starting the client {clientProxy.cid} again \U0001f973")

@@ -21,7 +21,10 @@ metrics_distributed_fit: {
     }
     ...
 }
-
+# Metrics collected after each merge into the global model. (Global model evaluated centrally after merge.)
+metrics_centralized_async: {
+    "accuracy": [ (timestamp1, value1) , .... ]
+}
 Note: value1 is collected at timestamp1 in metrics_distributed_fit.
 """
 from flwr.server.history import History
@@ -33,6 +36,8 @@ class AsyncHistory(History):
 
     def __init__(self) -> None:
         self.metrics_distributed_fit_async = {}
+        self.metrics_centralized_async = {} # metrics aggregated after each merge into the global model.
+        self.losses_centralized_async = []
         super().__init__()
 
     def add_metrics_distributed_fit_async(
@@ -47,7 +52,22 @@ class AsyncHistory(History):
                 if client_id not in self.metrics_distributed_fit_async[key]:
                     self.metrics_distributed_fit_async[key][client_id] = []
                 self.metrics_distributed_fit_async[key][client_id].append((timestamp, metrics[key]))
-    
+
+    def add_metrics_centralized_async(self, metrics: Dict[str, Scalar], timestamp: float) -> None:
+        """Add metrics entries (from centralized evaluation)."""
+        lock = Lock()
+        with lock:
+            for metric in metrics:
+                if metric not in self.metrics_centralized_async:
+                    self.metrics_centralized_async[metric] = []
+                self.metrics_centralized_async[metric].append((timestamp, metrics[metric]))
+
+    def add_loss_centralized_async(self, timestamp: float, loss: float) -> None:
+        """Add loss entries (from centralized evaluation)."""
+        lock = Lock()
+        with lock:
+            self.losses_centralized_async.append((timestamp, loss))
+
     def add_loss_centralized(self, timestamp: float, loss: float) -> None:
         return super().add_loss_centralized(timestamp, loss)
 

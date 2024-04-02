@@ -1,5 +1,7 @@
+
+import re
 from monitoring_sync.tracker import Tracker
-from typing import List, Tuple, Any
+from typing import List, Tuple, Any, Dict
 from datetime import datetime
 import os
 import pickle
@@ -55,7 +57,8 @@ class AsyncVisualizer:
         axs[1, 1].set_ylabel('Recall')
         # Set title for all subplots
         fig.suptitle(
-            f'Centralized Metrics for setting:\n{self.tracker.dataset_name}, rounds:{self.tracker.num_rounds}, clients:{self.tracker.num_clients},\nclients_per_round:{self.tracker.clients_per_round}, epochs:{self.tracker.epochs},\npartitioning:{self.tracker.partitioning}, alpha:{self.tracker.alpha}')
+            f'Centralized Metrics for setting:\n{self.tracker.dataset_name}, train_time: {self.tracker.total_train_time}, epochs:{self.tracker.epochs},\npartitioning:{self.tracker.partitioning}, alpha:{self.tracker.alpha}\n' + \
+            f'async_aggregation_strategy:{self.tracker.async_aggregation_strategy}, max_workers:{self.tracker.max_workers}, waiting_interval:{self.tracker.waiting_interval}')
         plt.savefig('results/' + folder_name + '/centralized_metrics.png')
         plt.clf()
 
@@ -71,7 +74,8 @@ class AsyncVisualizer:
         axs[1].set_title('Final Recall per class')
         axs[1].set_xlabel('Class')
         axs[1].set_ylabel('Recall')
-        fig.suptitle(f'Final Metrics for setting:\n{self.tracker.dataset_name}, rounds:{self.tracker.num_rounds}, clients:{self.tracker.num_clients},\nclients_per_round:{self.tracker.clients_per_round}, epochs:{self.tracker.epochs},\npartitioning:{self.tracker.partitioning}, alpha:{self.tracker.alpha}')
+        fig.suptitle(f'Final Metrics for setting:\n{self.tracker.dataset_name}, train_time: {self.tracker.total_train_time}, epochs:{self.tracker.epochs},\npartitioning:{self.tracker.partitioning}, alpha:{self.tracker.alpha}' + \
+            f'async_aggregation_strategy:{self.tracker.async_aggregation_strategy}, max_workers:{self.tracker.max_workers}, waiting_interval:{self.tracker.waiting_interval}')
         plt.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
         plt.savefig('results/' + folder_name
                     + '/centralized_final_perclass_metrics.png')
@@ -82,7 +86,8 @@ class AsyncVisualizer:
         fig, ax = plt.subplots(figsize=(15, 10))
         df = pd.DataFrame(self.tracker.target_counts)
         df.plot(kind='bar', stacked=True, ax=ax)
-        ax.set_title(f'Final Metrics for setting:\n{self.tracker.dataset_name}, rounds:{self.tracker.num_rounds}, clients:{self.tracker.num_clients},\nclients_per_round:{self.tracker.clients_per_round}, epochs:{self.tracker.epochs},\npartitioning:{self.tracker.partitioning}, alpha:{self.tracker.alpha}')
+        ax.set_title(f'Final Metrics for setting:\n{self.tracker.dataset_name},  train_time: {self.tracker.total_train_time}, epochs:{self.tracker.epochs},\npartitioning:{self.tracker.partitioning}, alpha:{self.tracker.alpha}'  + \
+            f'async_aggregation_strategy:{self.tracker.async_aggregation_strategy}, max_workers:{self.tracker.max_workers}, waiting_interval:{self.tracker.waiting_interval}')
         ax.set_xlabel('Client')
         ax.set_ylabel('Count')
         lgd = ax.legend(title='Class', bbox_to_anchor=(
@@ -110,11 +115,11 @@ class AsyncVisualizer:
         
         if num_cols == 1:
             axs.reshape(num_rows,1)
-        fig.suptitle('Accuracies per client per round\n'+title_suffix, fontsize=30)
+        fig.suptitle(f'Accuracies per client over time for setting:\n {self.tracker.dataset_name},  train_time: {self.tracker.total_train_time}, epochs:{self.tracker.epochs},\npartitioning:{self.tracker.partitioning}, alpha:{self.tracker.alpha}'  + \
+            f'async_aggregation_strategy:{self.tracker.async_aggregation_strategy}, max_workers:{self.tracker.max_workers}, waiting_interval:{self.tracker.waiting_interval}')
         # Flatten the axs array for easy indexing in case of a 2D configuration
         axs = axs.flatten()
-        rounds = self.tracker.num_rounds
-
+        
         # Loop through the number of plots
         for i in range(n):
             if str(i) in self.tracker.history.metrics_distributed_fit_async['accuracy']:
@@ -128,10 +133,9 @@ class AsyncVisualizer:
             axs[i].plot(timestamps, accuracies)
             axs[i].set_title(
                 f'Client: {i+1}, Samples: {samples_per_client[i]}, Times started: {times_started[i]}')
-            axs[i].set_xlim(1, rounds)
             axs[i].set_ylim(0, 1)
             axs[i].set_ylabel('accuracy')
-            axs[i].set_xlabel('round')
+            axs[i].set_xlabel('time')
             # axs[i].set_ylim(0, max_sample_size)
 
         # Hide the remaining empty subplots
@@ -159,10 +163,10 @@ class AsyncVisualizer:
         
         if num_cols == 1:
             axs.reshape(num_rows,1)
-        fig.suptitle('Precisions per client per round\n'+title_suffix, fontsize=30)
+        fig.suptitle(f'Precisions per client over timefor setting:\n{self.tracker.dataset_name},  train_time: {self.tracker.total_train_time}, epochs:{self.tracker.epochs},\npartitioning:{self.tracker.partitioning}, alpha:{self.tracker.alpha}'  + \
+            f'async_aggregation_strategy:{self.tracker.async_aggregation_strategy}, max_workers:{self.tracker.max_workers}, waiting_interval:{self.tracker.waiting_interval}')
         # Flatten the axs array for easy indexing in case of a 2D configuration
         axs = axs.flatten()
-        rounds = self.tracker.num_rounds
 
         # Loop through the number of plots
         for i in range(n):
@@ -177,10 +181,9 @@ class AsyncVisualizer:
             axs[i].plot(timestamps, precisions)
             axs[i].set_title(
                 f'Client: {i+1}, Samples: {samples_per_client[i]}, Times started: {times_started[i]}')
-            axs[i].set_xlim(1, rounds)
             axs[i].set_ylim(0, 1)
             axs[i].set_ylabel('precision')
-            axs[i].set_xlabel('round')
+            axs[i].set_xlabel('time')
             # axs[i].set_ylim(0, max_sample_size)
 
         # Hide the remaining empty subplots
@@ -213,38 +216,43 @@ class AsyncVisualizer:
                 other_tracker : Tracker = pickle.load(f)
                 other_trackers.append(other_tracker)
         take_folder_name = 'take_' + datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-        configs = [(ot.dataset_name,
-                    ot.num_rounds,
-                    ot.num_clients,
-                    ot.clients_per_round,
-                    ot.fraction_evaluate,
-                    ot.min_evaluate_clients,
-                    ot.epochs,
-                    ot.batch_size,
-                    ot.learning_rate,
-                    ) for ot in other_trackers]
-        unique_configs = set(configs)
+        configs = [{"dataset_name": ot.dataset_name,
+                    "total_train_time": ot.total_train_time,
+                    "epochs": ot.epochs,
+                    "batch_size": ot.batch_size,
+                    "learning_rate": ot.learning_rate,
+                } for ot in other_trackers]
+        unique_configs_values = set([ tuple(config.values()) for config in configs ] ) 
+        unique_configs = [ config for config in configs if tuple(config.values()) in unique_configs_values]
         log(DEBUG, "unique_configs: %s", unique_configs)
+        varied_params = {
+            'partitioning': 'part' , 
+            # 'alpha': 'a', 
+            'num_clients': 'n', 
+            'async_aggregation_strategy': 's' , 
+            'max_workers': 'mw', 
+            # 'waiting_interval': 'wi',
+            }
         for unique_config in unique_configs:
-            other_trackers_same_config = [ot for ot in other_trackers if (ot.dataset_name,
-                                                                          ot.num_rounds,
-                                                                          ot.num_clients,
-                                                                          ot.clients_per_round,
-                                                                          ot.fraction_evaluate,
-                                                                          ot.min_evaluate_clients,
-                                                                          ot.epochs,
-                                                                          ot.batch_size,
-                                                                          ot.learning_rate,
-                                                                          ) == unique_config]
+            other_trackers_same_config = [ot for ot in other_trackers if ({"dataset_name": ot.dataset_name,
+                    "total_train_time": ot.total_train_time,
+                    "epochs": ot.epochs,
+                    "batch_size": ot.batch_size,
+                    "learning_rate": ot.learning_rate,
+                } == unique_config) and ot.is_async]
             log(DEBUG,
                 f"Number of trackers with the same config: {len(other_trackers_same_config)}")
             self.make_comparative_plots(
-                other_trackers_same_config, unique_config=unique_config, take_folder_name=take_folder_name, config_specific_folder_name=config_specific_folder_name)
+                other_trackers_same_config, unique_config=unique_config, take_folder_name=take_folder_name, config_specific_folder_name=config_specific_folder_name, varied_paremters_local=varied_params)
 
-    def make_comparative_plots(self, all_trackers: List["Tracker"], take_folder_name: str, folder_name: str = None, unique_config: Tuple = None, config_specific_folder_name: str = None):
+    def make_comparative_plots(self, all_trackers: List["Tracker"], take_folder_name: str, folder_name: str = None, unique_config: Dict = None, 
+                               config_specific_folder_name: str = None, varied_paremters: Dict[str,str] = None):
+        varied_paremters_local = varied_paremters.copy()
+        
+        if 'partitioning' in varied_paremters_local.keys() and varied_paremters_local['partitioning'] == 'iid' and 'alpha' in varied_paremters_local.keys():
+            varied_paremters_local.pop('alpha')
         if not folder_name:
-            folder_name = 'config_' + 'dataset_' + str(unique_config[0]) + '_rounds_' + str(unique_config[1]) + '_clients_' + str(unique_config[2]) + '_clients_per_round_' + str(unique_config[3]) + '_fraction_evaluate_' + str(
-                unique_config[4]) + '_min_evaluate_clients_' + str(unique_config[5]) + '_epochs_' + str(unique_config[6]) + '_batch_' + str(unique_config[7]) + '_lr_' + str(unique_config[8]) + '_timestamp_' + datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+            folder_name = 'async_config_' + config_to_str(unique_config) 
         if len(all_trackers) == 0:
             return
 
@@ -260,34 +268,37 @@ class AsyncVisualizer:
         fig, axs = plt.subplots(2, 2, figsize=(20, 10))
         for tracker in all_trackers:
             linewidth = 1.0 if tracker.partitioning != 'iid' else 3.0
-            label = tracker.partitioning if 'dirichlet' not in tracker.partitioning else tracker.partitioning + \
-                '(' + str(tracker.alpha) + ')'
-            axs[0, 0].plot(extract_vals_from_metrics(tracker.history.metrics_centralized['accuracy']),
+            label = get_label_from_varied_params(varied_params=varied_paremters_local,tracker=tracker) # (tracker.partitioning if 'dirichlet' not in tracker.partitioning else tracker.partitioning + \
+                # '(' + str(tracker.alpha) + ')') + ', n=' + str(tracker.num_clients) + ', \n s=' + tracker.async_aggregation_strategy + ', mw=' + str(tracker.max_workers) + ', wi=' + str(tracker.waiting_interval)
+            timestamps = [ts for ts, _ in tracker.history.metrics_centralized['accuracy']]
+            first_ts = timestamps[0]
+            timestamps = [t - first_ts for t in timestamps]
+            axs[0, 0].plot(timestamps, extract_vals_from_metrics(tracker.history.metrics_centralized['accuracy']),
                            label=label, linewidth=linewidth)
-            axs[0, 1].plot(extract_vals_from_metrics(tracker.history.losses_centralized), 
+            axs[0, 1].plot(timestamps, extract_vals_from_metrics(tracker.history.losses_centralized), 
                            label=label, linewidth=linewidth)
-            axs[1, 0].plot( extract_vals_from_metrics(tracker.history.metrics_centralized['precision']),
+            axs[1, 0].plot(timestamps, extract_vals_from_metrics(tracker.history.metrics_centralized['precision']),
                            label=label, linewidth=linewidth)
-            axs[1, 1].plot(extract_vals_from_metrics(tracker.history.metrics_centralized['recall']),
+            axs[1, 1].plot(timestamps, extract_vals_from_metrics(tracker.history.metrics_centralized['recall']),
                            label=label, linewidth=linewidth)
         axs[0, 0].set_title('Centralized Accuracy')
-        axs[0, 0].set_xlabel('Round')
+        axs[0, 0].set_xlabel('time')
         axs[0, 0].set_ylabel('Accuracy')
         axs[0, 1].set_title('Centralized Loss')
-        axs[0, 1].set_xlabel('Round')
+        axs[0, 1].set_xlabel('time')
         axs[0, 1].set_ylabel('Loss')
         axs[1, 0].set_title('Centralized Precision')
-        axs[1, 0].set_xlabel('Round')
+        axs[1, 0].set_xlabel('time')
         axs[1, 0].set_ylabel('Precision')
         axs[1, 1].set_title('Centralized Recall')
-        axs[1, 1].set_xlabel('Round')
+        axs[1, 1].set_xlabel('time')
         axs[1, 1].set_ylabel('Recall')
         axs[0, 0].legend()
         axs[0, 1].legend()
         axs[1, 0].legend()
         axs[1, 1].legend()
         fig.suptitle(
-            f'Centralized metrics comparison {unique_config[0]} rounds {unique_config[1]} \nclients {unique_config[2]} clients_per_round {unique_config[3]} epochs {unique_config[6]}')
+            f'Centralized metrics comparison:\n' + config_to_str(unique_config))
         plt.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
         plt.savefig('global/' + take_folder_name + '/'
                     + folder_name + '/centralized_metrics_comparison.png')
@@ -301,34 +312,36 @@ class AsyncVisualizer:
                 iid_tracker = iid_tracker[0]
                 fig, axs = plt.subplots(2, 2, figsize=(20, 10))
                 for tracker in [iid_tracker, self.tracker]:
-                    label = tracker.partitioning if 'dirichlet' not in tracker.partitioning else tracker.partitioning + \
-                        '(' + str(tracker.alpha) + ')'
-                    axs[0, 0].plot(extract_vals_from_metrics(tracker.history.metrics_centralized['accuracy']),
+                    label =  get_label_from_varied_params(varied_params=varied_paremters_local,tracker=tracker)
+                    timestamps = [ts for ts, _ in tracker.history.metrics_centralized['accuracy']]
+                    first_ts = timestamps[0]
+                    timestamps = [t - first_ts for t in timestamps]
+                    axs[0, 0].plot(timestamps, extract_vals_from_metrics(tracker.history.metrics_centralized['accuracy']),
                            label=label, linewidth=linewidth)
-                    axs[0, 1].plot(extract_vals_from_metrics(tracker.history.losses_centralized), 
+                    axs[0, 1].plot(timestamps, extract_vals_from_metrics(tracker.history.losses_centralized), 
                                 label=label, linewidth=linewidth)
-                    axs[1, 0].plot( extract_vals_from_metrics(tracker.history.metrics_centralized['precision']),
+                    axs[1, 0].plot(timestamps, extract_vals_from_metrics(tracker.history.metrics_centralized['precision']),
                                 label=label, linewidth=linewidth)
-                    axs[1, 1].plot(extract_vals_from_metrics(tracker.history.metrics_centralized['recall']),
+                    axs[1, 1].plot(timestamps, extract_vals_from_metrics(tracker.history.metrics_centralized['recall']),
                                 label=label, linewidth=linewidth)
                 axs[0, 0].set_title('Centralized Accuracy')
-                axs[0, 0].set_xlabel('Round')
+                axs[0, 0].set_xlabel('time')
                 axs[0, 0].set_ylabel('Accuracy')
                 axs[0, 1].set_title('Centralized Loss')
-                axs[0, 1].set_xlabel('Round')
+                axs[0, 1].set_xlabel('time')
                 axs[0, 1].set_ylabel('Loss')
                 axs[1, 0].set_title('Centralized Precision')
-                axs[1, 0].set_xlabel('Round')
+                axs[1, 0].set_xlabel('time')
                 axs[1, 0].set_ylabel('Precision')
                 axs[1, 1].set_title('Centralized Recall')
-                axs[1, 1].set_xlabel('Round')
+                axs[1, 1].set_xlabel('time')
                 axs[1, 1].set_ylabel('Recall')
                 axs[0, 0].legend()
                 axs[0, 1].legend()
                 axs[1, 0].legend()
                 axs[1, 1].legend()
                 fig.suptitle(
-                    f'Centralized metrics comparison {unique_config[0]} rounds {unique_config[1]} \nclients {unique_config[2]} clients_per_round {unique_config[3]} epochs {unique_config[6]}')
+                    f'Centralized metrics comparison:\n' + config_to_str(unique_config))
                 plt.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
                 plt.savefig('results/' + config_specific_folder_name
                             + '/centralized_metrics_comparison_to_iid_only.png')
@@ -345,8 +358,7 @@ class AsyncVisualizer:
             axs = axs.reshape(2, 1)
         clients = range(1, all_trackers[0].num_clients + 1)
         for i, tracker in enumerate(all_trackers):
-            label = tracker.partitioning if 'dirichlet' not in tracker.partitioning else tracker.partitioning + \
-                '(' + str(tracker.alpha) + ')'
+            label =  get_label_from_varied_params(varied_params=varied_paremters_local,tracker=tracker)
             axs[i % 2, i // 2].bar(clients, tracker.sample_sizes, label=label)
             axs[i % 2, i // 2].set_title('Sample sizes per client\n' + label)
             axs[i % 2, i // 2].set_xlabel('Client')
@@ -357,7 +369,7 @@ class AsyncVisualizer:
             axs[i % 2, i // 2].axis('off')
 
         fig.suptitle(
-            f'Sample Sizes comparison {unique_config[0]} rounds {unique_config[1]} \nclients {unique_config[2]} clients_per_round {unique_config[3]} epochs {unique_config[6]}')
+            f'Sample Sizes comparison\n{config_to_str(unique_config)}')
         plt.tight_layout(pad=1, w_pad=2, h_pad=3.0)
         plt.savefig('global/' + take_folder_name + '/'
                     + folder_name + '/sample_sizes_comparison.png')
@@ -373,8 +385,8 @@ class AsyncVisualizer:
             axs = axs.reshape(2, 1)
         
         for i, tracker in enumerate(all_trackers):
-            label = tracker.partitioning if 'dirichlet' not in tracker.partitioning else tracker.partitioning + \
-                '(' + str(tracker.alpha) + ')'
+            label =  get_label_from_varied_params(varied_params=varied_paremters_local,tracker=tracker)
+
             df = pd.DataFrame(tracker.target_counts)
             df.plot(kind='bar', stacked=True, ax=axs[i % 2, i // 2], legend=False)
             axs[i % 2, i
@@ -392,7 +404,7 @@ class AsyncVisualizer:
             axs[i % 2, i // 2].axis('off')
 
         fig.suptitle(
-            f'Target counts comparison {unique_config[0]} rounds {unique_config[1]} \nclients {unique_config[2]} clients_per_round {unique_config[3]} epochs {unique_config[6]}')
+            f'Target counts comparison:\n{config_to_str(unique_config)}')
         plt.tight_layout(pad=1, w_pad=2, h_pad=3.0)
         fig.savefig('global/' + take_folder_name + '/' + folder_name
                     + '/target_counts_comparison.png', bbox_extra_artists=(lgd,), bbox_inches='tight')
@@ -403,8 +415,7 @@ class AsyncVisualizer:
         if cols == 1:
             axs = axs.reshape(2, 1)
         for i, tracker in enumerate(all_trackers):
-            label = tracker.partitioning if 'dirichlet' not in tracker.partitioning else tracker.partitioning + \
-                '(' + str(tracker.alpha) + ')'
+            label =  get_label_from_varied_params(varied_params=varied_paremters_local,tracker=tracker)
             samples_per_class = np.zeros(tracker.num_classes)
             for cid in tracker.history.metrics_distributed_fit_async['accuracy'].keys():
                 times_chosen = len(tracker.history.metrics_distributed_fit_async['accuracy'][cid])
@@ -418,7 +429,7 @@ class AsyncVisualizer:
             axs[i % 2, i // 2].axis('off')
 
         fig.suptitle(
-            f'Total number of samples per class comparison {unique_config[0]} rounds {unique_config[1]} \nclients {unique_config[2]} clients_per_round {unique_config[3]} epochs {unique_config[6]}')
+            f'Total number of samples per class comparison:\n{config_to_str(unique_config)}')
         plt.tight_layout(pad=1, w_pad=2, h_pad=3.0)
         fig.savefig('global/' + take_folder_name + '/' + folder_name
                     + '/total_samples_per_class_comparison.png', bbox_extra_artists=(lgd,), bbox_inches='tight')
@@ -428,11 +439,10 @@ class AsyncVisualizer:
         fig, ax = plt.subplots(figsize=(15, 10))
         global_times = [
             other_tracker.global_total_train_time for other_tracker in all_trackers]
-        labels = [other_tracker.partitioning if 'dirichlet' not in other_tracker.partitioning else other_tracker.partitioning
-                  + '(' + str(other_tracker.alpha) + ')' for other_tracker in all_trackers]
+        labels = [get_label_from_varied_params(varied_paremters_local, other_tracker) for other_tracker in all_trackers]
         ax.bar(labels, global_times)
         ax.set_title(
-            f'Global train times comparison {unique_config[0]} rounds {unique_config[1]} \nclients {unique_config[2]} clients_per_round {unique_config[3]} epochs {unique_config[6]}')
+            f'Global train times comparison\n{config_to_str(unique_config)}')
         ax.set_xlabel('Partitioning')
         plt.xticks(rotation=45)
         ax.set_ylabel('Time (s)')
@@ -447,8 +457,8 @@ class AsyncVisualizer:
         final_losses = [ extract_vals_from_metrics(other_tracker.history.losses_centralized)[-1] for other_tracker in all_trackers]
         final_precisions = [ extract_vals_from_metrics(other_tracker.history.metrics_centralized['precision'])[-1] for other_tracker in all_trackers]
         final_recalls = [ extract_vals_from_metrics(other_tracker.history.metrics_centralized['recall'])[-1] for other_tracker in all_trackers]
-        labels = [other_tracker.partitioning if 'dirichlet' not in other_tracker.partitioning else other_tracker.partitioning
-                  + '(' + str(other_tracker.alpha) + ')' for other_tracker in all_trackers]
+        labels = [get_label_from_varied_params(varied_paremters_local, other_tracker) for other_tracker in all_trackers]
+
         axs[0, 0].bar(labels, final_accuracies)
         axs[0, 0].set_title('Final Accuracies')
         axs[0, 0].set_xlabel('Partitioning')
@@ -471,7 +481,7 @@ class AsyncVisualizer:
         axs[1, 1].set_xticklabels(labels, rotation=45)
 
         fig.suptitle(
-            f'Comparison of final metrics: {unique_config[0]} rounds {unique_config[1]} \nclients {unique_config[2]} clients_per_round {unique_config[3]} epochs {unique_config[6]}')
+            f'Comparison of final metrics:\n{config_to_str(unique_config)}')
 
         plt.tight_layout(pad=1, w_pad=2, h_pad=3.0)
         plt.savefig('global/' + take_folder_name + '/'
@@ -486,11 +496,10 @@ class AsyncVisualizer:
              for tracker in all_trackers ] 
         
         log(DEBUG, f"n_samples: {n_samples}")
-        labels = [other_tracker.partitioning if 'dirichlet' not in other_tracker.partitioning else other_tracker.partitioning
-                  + '(' + str(other_tracker.alpha) + ')' for other_tracker in all_trackers]
+        labels = [get_label_from_varied_params(varied_paremters_local, other_tracker) for other_tracker in all_trackers]
         plt.bar(labels, n_samples)
         plt.title(
-            f'Total samples seen {unique_config[0]} rounds {unique_config[1]} \nclients {unique_config[2]} clients_per_round {unique_config[3]} epochs {unique_config[6]}')
+            f'Total samples seen\n{config_to_str(unique_config)}')
         plt.xlabel('Partitioning')
         plt.xticks(rotation=45)
         plt.ylabel('Number of samples seen')
@@ -499,4 +508,18 @@ class AsyncVisualizer:
         plt.clf()
         
 
+def get_label_from_varied_params(varied_params: Dict[str,str], tracker: Tracker):
+    if len(varied_params) > 4:
+        half = len(varied_params.keys()) // 2
+        res = ', '.join([f'{varied_params[param]}={getattr(tracker, param)}' for param in list(varied_params.keys())[:half]])
+        res += '\n'
+        res += ', '.join([f'{varied_params[param]}={getattr(tracker, param)}' for param in list(varied_params.keys())[half:]])
+    else:
+        res = ', '.join([f'{varied_params[param]}={getattr(tracker, param)}' for param in varied_params.keys()])
+    #if 'iid' in res:
+    #    res = re.sub(r"a=[+-]?([0-9]*[.])?[0-9]+", "", res)
+    return res
+
+def config_to_str(config: Dict):
+    return ', '.join([f'{key}={value}' for key, value in config.items()])
         # NOTE: If there are multiple values for the **same label** the plot will be drawn over the previous plot.

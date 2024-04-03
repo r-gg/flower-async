@@ -194,7 +194,47 @@ class AsyncVisualizer:
         fig.savefig('results/' + folder_name + '/precisions_per_client_over_time'+title_suffix+'.png')
         plt.clf()
 
-        
+    
+    def make_interval_plot_async(self, folder_name: str):
+        times_started = self.tracker.history.metrics_distributed_fit_async['time_started']
+        local_train_times = self.tracker.history.metrics_distributed_fit_async['local_train_time']
+
+        start_timestamp = self.tracker.history.metrics_centralized_async['start_timestamp'][0][1]
+        end_timestamp = self.tracker.history.metrics_centralized_async['end_timestamp'][0][1]
+
+        self.tracker.history.metrics_distributed_fit_async['time_started']
+
+        df = pd.DataFrame([], columns=['cid', 'start', 'end'])
+
+        appended_data = []
+        for cid, lst in times_started.items():
+            for i, (_, start_time) in enumerate(lst):
+                local_train_time = local_train_times[cid][i][1]
+                new_df = pd.DataFrame([[cid, start_time, start_time + local_train_time]] , columns=['cid', 'start', 'end'])
+                appended_data.append(new_df)
+
+        final_df = pd.concat(appended_data)
+        df = final_df
+        fig, ax = plt.subplots(figsize=(10, 8))
+        clients = df['cid'].unique()
+        client_positions = {cid: i for i, cid in enumerate(sorted(clients), start=1)}
+        for _, row in df.iterrows():
+            cid = row['cid']
+            start = row['start']
+            end = row['end']
+            ax.plot([start, end], [client_positions[cid], client_positions[cid]], marker='o')
+
+        ax.axvline(start_timestamp, color='b', linestyle='--', label='Start Timestamp')
+        ax.axvline(end_timestamp, color='r', linestyle='--', label='End Timestamp')
+
+        ax.legend()
+        plt.yticks(list(client_positions.values()), list(client_positions.keys()))
+        plt.xlabel('Time')
+        plt.ylabel('Client ID')
+        plt.title('Intervals Marked by Start and End Times for Each Client')
+        plt.grid(True)
+        plt.savefig('results/' + folder_name + '/intervals.png')
+        plt.clf()
 
         
     def make_config_specific_visualizations(self, folder_name: str):
@@ -205,6 +245,7 @@ class AsyncVisualizer:
         self.make_precisions_per_client_over_time_plot(folder_name)
         self.make_centralized_final_perclass_metrics_plot(folder_name)
         self.make_target_counts_plot(folder_name)
+        self.make_interval_plot_async(folder_name)
 
 
     def make_global_visualizations(self, config_specific_folder_name: str = None):
@@ -224,7 +265,7 @@ class AsyncVisualizer:
                     "partitioning": ot.partitioning,
                     "num_clients": ot.num_clients,
                     "max_workers": ot.max_workers,
-                } for ot in other_trackers]
+                } for ot in other_trackers if ot.is_async]
         unique_configs = [i for n, i in enumerate(configs)
             if i not in configs[:n]]
         log(DEBUG, "unique_configs: %s", unique_configs)
@@ -232,7 +273,8 @@ class AsyncVisualizer:
             # 'partitioning': 'part' , 
             # 'alpha': 'a', 
             # 'num_clients': 'n', 
-            'async_aggregation_strategy': 's' , 
+            # 'data_loading_strategy': 'dls',
+            #'async_aggregation_strategy': 's' , 
             # 'max_workers': 'mw', 
             # 'waiting_interval': 'wi',
             }

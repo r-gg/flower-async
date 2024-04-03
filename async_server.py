@@ -18,7 +18,6 @@
 import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock, Thread, Timer
-import timeit
 from logging import DEBUG, INFO, WARNING
 from typing import Dict, List, Optional, Tuple, Union
 from time import sleep, time
@@ -70,6 +69,7 @@ class AsyncServer(Server):
         strategy: Strategy,
         client_manager: ClientManager, # AsyncClientManager,
         async_strategy: AsynchronousStrategy,
+        base_conf_dict,
         total_train_time: int = 85,
         waiting_interval: int = 5,
         max_workers: int = 2,
@@ -81,6 +81,12 @@ class AsyncServer(Server):
         self.strategy = strategy
         self._client_manager = client_manager
         self.max_workers = max_workers
+        self.client_data_percs: Dict[str, List[float]] = {} # dictionary tracking the data percentages sent to the client
+        for key, value in base_conf_dict.items():
+            setattr(self, key, value)
+        self.start_timestamp = 0.0
+        self.end_timestamp = 0.0
+
         # super().__init__(*args, strategy=strategy, client_manager=client_manager)
 
     def set_new_params(self, new_params: Parameters):
@@ -112,8 +118,10 @@ class AsyncServer(Server):
         # Run federated learning for num_rounds
         log(INFO, "FL starting")
         executor = ThreadPoolExecutor(max_workers=self.max_workers)
-        start_time = timeit.default_timer()
+        start_time = time()
         end_timestamp = time() + self.total_train_time
+        self.end_timestamp = end_timestamp
+        self.start_timestamp = time()
         counter = 1
         self.fit_round(
             server_round=0,
@@ -122,15 +130,16 @@ class AsyncServer(Server):
             end_timestamp=end_timestamp,
             history=history
         )
-        while timeit.default_timer() - start_time < self.total_train_time:
+        while time() - start_time < self.total_train_time:
             # If the clients are to be started periodically, move fit_round here and remove the executor.submit lines from _handle_finished_future_after_fit
             sleep(self.waiting_interval)
             self.evaluate_centralized(counter, history)
             #self.evaluate_decentralized(counter, history, timeout)
             counter += 1
 
+        executor.shutdown(wait=True, cancel_futures=True)
         log(INFO, "FL finished")
-        end_time = timeit.default_timer()
+        end_time = time()
         elapsed = end_time - start_time
         log(INFO, "FL finished in %s", elapsed)
         return history
@@ -152,7 +161,8 @@ class AsyncServer(Server):
             0, parameters=self.parameters)
         if res_cen is not None:
             loss_cen, metrics_cen = res_cen
-
+            metrics_cen['end_timestamp'] = self.end_timestamp
+            metrics_cen['start_timestamp'] = self.start_timestamp
             history.add_loss_centralized_async(
                 timestamp=time(), loss=loss_cen)
             history.add_metrics_centralized_async(
@@ -247,6 +257,8 @@ class AsyncServer(Server):
             parameters=self.parameters,
             client_manager=self._client_manager,
         )
+        for client_proxy, fitins in client_instructions:
+            fitins.config = { **fitins.config, **self.get_config_for_client_fit(client_proxy.cid) }
 
         if not client_instructions:
             log(INFO, "fit_round %s: no clients selected, cancel", server_round)
@@ -268,6 +280,26 @@ class AsyncServer(Server):
             end_timestamp=end_timestamp,
             history=history,
         )
+
+    def get_config_for_client_fit(self, client_id):
+        config = {}
+        if not self.is_streaming:
+            return config
+        curr_timestamp = time()
+        if curr_timestamp > self.end_timestamp:
+            return config
+        if client_id not in self.client_data_percs:
+            self.client_data_percs[client_id] = [0.0] # Clients start with 10% of the data (otherwise called with 0 samples)
+        prev_data_perc = self.client_data_percs[client_id][-1]
+        start_timestamp = self.end_timestamp - self.total_train_time
+        data_perc = ( (time() - start_timestamp) / self.total_train_time ) * 0.9 + 0.1 # Linearly increase the data percentage from 10% to 100% over the total_train_time
+        config['data_percentage'] = data_perc
+        config['prev_data_percentage'] = prev_data_perc
+        config['data_loading_strategy'] = self.data_loading_strategy
+        if self.data_loading_strategy == 'fixed_nr':
+            config['n_last_samples_for_data_loading_fit'] = self.n_last_samples_for_data_loading_fit
+        self.client_data_percs[client_id].append(data_perc)
+        return config
 
     def disconnect_all_clients(self, timeout: Optional[float]) -> None:
         """Send shutdown signal to all clients."""
@@ -415,9 +447,10 @@ def _handle_finished_future_after_fit(
     
     if time() < end_timestamp:
         log(DEBUG, f"Yippie! Starting the client {clientProxy.cid} again \U0001f973")
-        new_ins = FitIns(server.parameters, {})
+        new_ins = FitIns(server.parameters, server.get_config_for_client_fit(clientProxy.cid))
         ftr = executor.submit(fit_client, client=clientProxy, ins=new_ins, timeout=None)
         ftr.add_done_callback(lambda ftr: _handle_finished_future_after_fit(ftr, server, executor, end_timestamp, history))
+
 
 ############################### FOR EVALUATION ####################################
 

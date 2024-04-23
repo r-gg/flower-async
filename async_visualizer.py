@@ -29,7 +29,7 @@ class AsyncVisualizer:
 
     def plot(self, folder_name: str):
         self.make_config_specific_visualizations(folder_name)
-        self.make_global_visualizations(config_specific_folder_name=folder_name)    
+        # self.make_global_visualizations(config_specific_folder_name=folder_name)    
 
     def make_centralized_metrics_plot(self, folder_name: str):
         plt.style.use('seaborn-v0_8-whitegrid')
@@ -210,7 +210,7 @@ class AsyncVisualizer:
         for cid, lst in times_started.items():
             for i, (_, start_time) in enumerate(lst):
                 local_train_time = local_train_times[cid][i][1]
-                new_df = pd.DataFrame([[cid, start_time, start_time + local_train_time]] , columns=['cid', 'start', 'end'])
+                new_df = pd.DataFrame([[cid, start_time-start_timestamp, start_time + local_train_time -start_timestamp]] , columns=['cid', 'start', 'end'])
                 appended_data.append(new_df)
 
         final_df = pd.concat(appended_data)
@@ -224,8 +224,8 @@ class AsyncVisualizer:
             end = row['end']
             ax.plot([start, end], [client_positions[cid], client_positions[cid]], marker='o')
 
-        ax.axvline(start_timestamp, color='b', linestyle='--', label='Start Timestamp')
-        ax.axvline(end_timestamp, color='r', linestyle='--', label='End Timestamp')
+        ax.axvline(0, color='b', linestyle='--', label='Start Timestamp')
+        ax.axvline(end_timestamp-start_timestamp, color='r', linestyle='--', label='End Timestamp')
 
         ax.legend()
         plt.yticks(list(client_positions.values()), list(client_positions.keys()))
@@ -486,7 +486,7 @@ class AsyncVisualizer:
         # Make a comparison plot for final global train times in one bar plot without subplots
         fig, ax = plt.subplots(figsize=(15, 10))
         global_times = [
-            other_tracker.global_total_train_time for other_tracker in all_trackers]
+            other_tracker.total_train_time for other_tracker in all_trackers]
         labels = [get_label_from_varied_params(varied_parameters_local, other_tracker) for other_tracker in all_trackers]
         ax.bar(labels, global_times)
         ax.set_title(

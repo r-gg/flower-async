@@ -149,7 +149,8 @@ class AsyncServer(Server):
             current_round, parameters=self.parameters)
         if res_cen is not None:
             loss_cen, metrics_cen = res_cen
-
+            metrics_cen['end_timestamp'] = self.end_timestamp
+            metrics_cen['start_timestamp'] = self.start_timestamp
             history.add_loss_centralized(
                 timestamp=time(), loss=loss_cen)
             history.add_metrics_centralized(
@@ -175,9 +176,6 @@ class AsyncServer(Server):
         This is not to be called if the clients are starting immediately after they finish! This is because the ray actor cannot process
         two concurrent requests to the same client. They get mixed up and future.result() in client_fit can return an
         EvaluateRes instead of FitRes.
-        
-        
-
         """
         res_fed = self.evaluate_round(
             server_round=current_round, timeout=timeout)

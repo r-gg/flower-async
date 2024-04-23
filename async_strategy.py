@@ -10,11 +10,13 @@ from logging import DEBUG, WARNING
 class AsynchronousStrategy:
     """Abstract base class for all asynchronous strategies."""
 
-    def __init__(self, total_samples: int, alpha: float, staleness_alpha: float, num_clients: int, async_aggregation_strategy: str,
+    def __init__(self, total_samples: int, alpha: float, staleness_alpha: float, fedasync_mixing_alpha: float, fedasync_a: float, num_clients: int, async_aggregation_strategy: str,
                  use_staleness: bool, use_sample_weighing: bool) -> None:
         self.total_samples = total_samples
         self.alpha = alpha  # aggregation alpha (FedAsynch)
         self.staleness_alpha = staleness_alpha
+        self.fedasync_a = fedasync_a
+        self.fedasync_mixing_alpha = fedasync_mixing_alpha
         self.num_clients = num_clients
         self.async_aggregation_strategy = async_aggregation_strategy
         self.use_staleness = use_staleness
@@ -52,7 +54,7 @@ class AsynchronousStrategy:
     def aggregate_fedasync(self, global_param_arr: NDArrays, model_update_param_arr: NDArrays, t_diff: float, num_samples: int) -> NDArrays:
         """Compute weighted average with the formula params_new = (1-alpha) * params_old + alpha * (model_update_params)"""
         # Calculate the total number of examples used during training
-        alpha_coeff = self.alpha
+        alpha_coeff = self.fedasync_mixing_alpha
         if self.use_staleness:
             alpha_coeff *= self.get_staleness_weight_coeff_fedasync_poly(
                 t_diff=t_diff)
@@ -89,8 +91,8 @@ class AsynchronousStrategy:
     def get_staleness_weight_coeff_fedasync_constant(self) -> float:
         return 1.0
 
-    def get_staleness_weight_coeff_fedasync_poly(self, t_diff: float, a: float = 0.5) -> float:
-        return math.pow(t_diff + 1, -a)
+    def get_staleness_weight_coeff_fedasync_poly(self, t_diff: float) -> float:
+        return math.pow(t_diff + 1, -self.fedasync_a)
 
     def get_staleness_weight_coeff_fedasync_hinge(self, t_diff: float, a: float = 10, b: float = 4) -> float:
         return 1 if t_diff <= b else 1 / (a * (t_diff - b) + 1)

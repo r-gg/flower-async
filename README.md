@@ -1,5 +1,7 @@
 # flower-async
-Implementation of asynchronous federated learning in flower that currently offers the following modes of operation:
+Implementation of asynchronous federated learning in flower currently being developed as a part of my master's thesis. 
+
+Currently offers the following modes of operation:
 - Unweighted - Upon each merge into the global model, the local updates and global model are weighted equally.
 - FedAsync - global_new = (1-alpha) * global_old + alpha * local_new
   - Where alpha depends on the staleness and/or number of samples used

@@ -431,7 +431,7 @@ def _handle_finished_future_after_fit(
     clientProxy, res = result
 
     #server.client_manager().set_client_to_free(clientProxy.cid)
-
+    process_start = time()
     # Check result status code
     if res.status.code == Code.OK:
         parameters_aggregated = server.async_strategy.average(
@@ -441,8 +441,10 @@ def _handle_finished_future_after_fit(
         history.add_metrics_distributed_fit_async(
             clientProxy.cid,{"sample_sizes": res.num_examples, **res.metrics }, timestamp=time()
         )
-        server.evaluate_centralized_async(history) # Evaluate the global model after the merge
-    
+        # server.evaluate_centralized_async(history) # Evaluate the global model after the merge
+
+    process_end = time()
+    log(DEBUG, f"Time taken to process the result: {process_end - process_start} seconds")    
     if time() < end_timestamp:
         log(DEBUG, f"Yippie! Starting the client {clientProxy.cid} again \U0001f973")
         new_ins = FitIns(server.parameters, server.get_config_for_client_fit(clientProxy.cid))

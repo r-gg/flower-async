@@ -34,24 +34,24 @@ class AsyncVisualizer:
     def make_centralized_metrics_plot(self, folder_name: str):
         plt.style.use('seaborn-v0_8-whitegrid')
         # Make four subplots in one representing centralized accuracy, loss, precision, recall and save it as a png
-        timestamps_centralized = [ts for ts, _ in self.tracker.history.metrics_centralized_async['accuracy']]
+        timestamps_centralized = [ts for ts, _ in self.tracker.history.metrics_centralized['accuracy']]
         first_ts = timestamps_centralized[0]
         timestamps_centralized = [t - first_ts for t in timestamps_centralized]
 
         fig, axs = plt.subplots(2, 2, figsize=(15, 10))
-        axs[0, 0].plot(timestamps_centralized, extract_vals_from_metrics(self.tracker.history.metrics_centralized_async['accuracy']))
+        axs[0, 0].plot(timestamps_centralized, extract_vals_from_metrics(self.tracker.history.metrics_centralized['accuracy']))
         axs[0, 0].set_title('Centralized Accuracy')
         axs[0, 0].set_xlabel('Timestamp')
         axs[0, 0].set_ylabel('Accuracy')
-        axs[0, 1].plot(timestamps_centralized, extract_vals_from_metrics(self.tracker.history.losses_centralized_async))
+        axs[0, 1].plot(timestamps_centralized, extract_vals_from_metrics(self.tracker.history.losses_centralized))
         axs[0, 1].set_title('Centralized Loss')
         axs[0, 1].set_xlabel('Timestamp')
         axs[0, 1].set_ylabel('Loss')
-        axs[1, 0].plot(timestamps_centralized, extract_vals_from_metrics(self.tracker.history.metrics_centralized_async['precision']))
+        axs[1, 0].plot(timestamps_centralized, extract_vals_from_metrics(self.tracker.history.metrics_centralized['precision']))
         axs[1, 0].set_title('Centralized Precision')
         axs[1, 0].set_xlabel('Timestamp')
         axs[1, 0].set_ylabel('Precision')
-        axs[1, 1].plot(timestamps_centralized, extract_vals_from_metrics(self.tracker.history.metrics_centralized_async['recall']))
+        axs[1, 1].plot(timestamps_centralized, extract_vals_from_metrics(self.tracker.history.metrics_centralized['recall']))
         axs[1, 1].set_title('Centralized Recall')
         axs[1, 1].set_xlabel('Timestamp')
         axs[1, 1].set_ylabel('Recall')
@@ -66,11 +66,11 @@ class AsyncVisualizer:
         # Make a two subplots for final precision and recall per class and save it as a png
         fig, axs = plt.subplots(1, 2, figsize=(15, 5))
         x_axis = range(1, self.tracker.num_classes + 1)
-        axs[0].bar(x_axis, self.tracker.history.metrics_centralized_async['precision_perclass'][-1][1])
+        axs[0].bar(x_axis, self.tracker.history.metrics_centralized['precision_perclass'][-1][1])
         axs[0].set_title('Final Precision per class')
         axs[0].set_xlabel('Class')
         axs[0].set_ylabel('Precision')
-        axs[1].bar(x_axis, self.tracker.history.metrics_centralized_async['recall_perclass'][-1][1])
+        axs[1].bar(x_axis, self.tracker.history.metrics_centralized['recall_perclass'][-1][1])
         axs[1].set_title('Final Recall per class')
         axs[1].set_xlabel('Class')
         axs[1].set_ylabel('Recall')
@@ -199,8 +199,8 @@ class AsyncVisualizer:
         times_started = self.tracker.history.metrics_distributed_fit_async['time_started']
         local_train_times = self.tracker.history.metrics_distributed_fit_async['local_train_time']
 
-        start_timestamp = self.tracker.history.metrics_centralized_async['start_timestamp'][0][1]
-        end_timestamp = self.tracker.history.metrics_centralized_async['end_timestamp'][0][1]
+        start_timestamp = self.tracker.history.metrics_centralized['start_timestamp'][0][1]
+        end_timestamp = self.tracker.history.metrics_centralized['end_timestamp'][0][1]
 
         self.tracker.history.metrics_distributed_fit_async['time_started']
 
@@ -318,16 +318,16 @@ class AsyncVisualizer:
             linewidth = 1.0 if tracker.partitioning != 'iid' else 3.0
             label = get_label_from_varied_params(varied_params=varied_parameters_local,tracker=tracker) # (tracker.partitioning if 'dirichlet' not in tracker.partitioning else tracker.partitioning + \
                 # '(' + str(tracker.alpha) + ')') + ', n=' + str(tracker.num_clients) + ', \n s=' + tracker.async_aggregation_strategy + ', mw=' + str(tracker.max_workers) + ', wi=' + str(tracker.waiting_interval)
-            timestamps = [ts for ts, _ in tracker.history.metrics_centralized_async['accuracy']]
+            timestamps = [ts for ts, _ in tracker.history.metrics_centralized['accuracy']]
             first_ts = timestamps[0]
             timestamps = [t - first_ts for t in timestamps]
-            axs[0, 0].plot(timestamps, extract_vals_from_metrics(tracker.history.metrics_centralized_async['accuracy']),
+            axs[0, 0].plot(timestamps, extract_vals_from_metrics(tracker.history.metrics_centralized['accuracy']),
                            label=label, linewidth=linewidth)
-            axs[0, 1].plot(timestamps, extract_vals_from_metrics(tracker.history.losses_centralized_async), 
+            axs[0, 1].plot(timestamps, extract_vals_from_metrics(tracker.history.losses_centralized), 
                            label=label, linewidth=linewidth)
-            axs[1, 0].plot(timestamps, extract_vals_from_metrics(tracker.history.metrics_centralized_async['precision']),
+            axs[1, 0].plot(timestamps, extract_vals_from_metrics(tracker.history.metrics_centralized['precision']),
                            label=label, linewidth=linewidth)
-            axs[1, 1].plot(timestamps, extract_vals_from_metrics(tracker.history.metrics_centralized_async['recall']),
+            axs[1, 1].plot(timestamps, extract_vals_from_metrics(tracker.history.metrics_centralized['recall']),
                            label=label, linewidth=linewidth)
         axs[0, 0].set_title('Centralized Accuracy')
         axs[0, 0].set_xlabel('time')
@@ -361,16 +361,16 @@ class AsyncVisualizer:
                 fig, axs = plt.subplots(2, 2, figsize=(20, 10))
                 for tracker in [iid_tracker, self.tracker]:
                     label =  get_label_from_varied_params(varied_params=varied_parameters_local,tracker=tracker)
-                    timestamps = [ts for ts, _ in tracker.history.metrics_centralized_async['accuracy']]
+                    timestamps = [ts for ts, _ in tracker.history.metrics_centralized['accuracy']]
                     first_ts = timestamps[0]
                     timestamps = [t - first_ts for t in timestamps]
-                    axs[0, 0].plot(timestamps, extract_vals_from_metrics(tracker.history.metrics_centralized_async['accuracy']),
+                    axs[0, 0].plot(timestamps, extract_vals_from_metrics(tracker.history.metrics_centralized['accuracy']),
                            label=label, linewidth=linewidth)
-                    axs[0, 1].plot(timestamps, extract_vals_from_metrics(tracker.history.losses_centralized_async), 
+                    axs[0, 1].plot(timestamps, extract_vals_from_metrics(tracker.history.losses_centralized), 
                                 label=label, linewidth=linewidth)
-                    axs[1, 0].plot(timestamps, extract_vals_from_metrics(tracker.history.metrics_centralized_async['precision']),
+                    axs[1, 0].plot(timestamps, extract_vals_from_metrics(tracker.history.metrics_centralized['precision']),
                                 label=label, linewidth=linewidth)
-                    axs[1, 1].plot(timestamps, extract_vals_from_metrics(tracker.history.metrics_centralized_async['recall']),
+                    axs[1, 1].plot(timestamps, extract_vals_from_metrics(tracker.history.metrics_centralized['recall']),
                                 label=label, linewidth=linewidth)
                 axs[0, 0].set_title('Centralized Accuracy')
                 axs[0, 0].set_xlabel('time')
@@ -501,10 +501,10 @@ class AsyncVisualizer:
         # Make a comparison plot for final accuracies, losses, precisions and recalls as four subplots (barplots)
         fig, axs = plt.subplots(2, 2, figsize=(20, 10))
         
-        final_accuracies = [ extract_vals_from_metrics(other_tracker.history.metrics_centralized_async['accuracy'])[-1] for other_tracker in all_trackers]
-        final_losses = [ extract_vals_from_metrics(other_tracker.history.losses_centralized_async)[-1] for other_tracker in all_trackers]
-        final_precisions = [ extract_vals_from_metrics(other_tracker.history.metrics_centralized_async['precision'])[-1] for other_tracker in all_trackers]
-        final_recalls = [ extract_vals_from_metrics(other_tracker.history.metrics_centralized_async['recall'])[-1] for other_tracker in all_trackers]
+        final_accuracies = [ extract_vals_from_metrics(other_tracker.history.metrics_centralized['accuracy'])[-1] for other_tracker in all_trackers]
+        final_losses = [ extract_vals_from_metrics(other_tracker.history.losses_centralized)[-1] for other_tracker in all_trackers]
+        final_precisions = [ extract_vals_from_metrics(other_tracker.history.metrics_centralized['precision'])[-1] for other_tracker in all_trackers]
+        final_recalls = [ extract_vals_from_metrics(other_tracker.history.metrics_centralized['recall'])[-1] for other_tracker in all_trackers]
         labels = [get_label_from_varied_params(varied_parameters_local, other_tracker) for other_tracker in all_trackers]
 
         axs[0, 0].bar(labels, final_accuracies)

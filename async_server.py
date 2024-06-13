@@ -130,10 +130,24 @@ class AsyncServer(Server):
             end_timestamp=end_timestamp,
             history=history
         )
+
+        best_loss = float('inf')
+        patience_init = 20
+        patience = patience_init
+        
         while time() - start_time < self.total_train_time:
             # If the clients are to be started periodically, move fit_round here and remove the executor.submit lines from _handle_finished_future_after_fit
             sleep(self.waiting_interval)
-            self.evaluate_centralized(counter, history)
+            loss = self.evaluate_centralized(counter, history)
+            if loss is not None:
+                if loss < best_loss - 1e-4:
+                    best_loss = loss
+                    patience = patience_init
+                else:
+                    patience -= 1
+                if patience == 0:
+                    log(INFO, "Early stopping")
+                    break
             #self.evaluate_decentralized(counter, history, timeout)
             counter += 1
 
@@ -156,6 +170,9 @@ class AsyncServer(Server):
             history.add_metrics_centralized(
                 timestamp=time(), metrics=metrics_cen
             )
+            return loss_cen
+        else:
+            return None
 
     def evaluate_centralized_async(self, history: AsyncHistory):
         res_cen = self.strategy.evaluate(

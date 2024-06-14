@@ -132,7 +132,7 @@ class AsyncServer(Server):
         )
 
         best_loss = float('inf')
-        patience_init = 20
+        patience_init = 1000
         patience = patience_init
         
         while time() - start_time < self.total_train_time:
@@ -170,6 +170,7 @@ class AsyncServer(Server):
             history.add_metrics_centralized(
                 timestamp=time(), metrics=metrics_cen
             )
+            log(INFO, "Centralized evaluation: loss %s, f1=%s", loss_cen, metrics_cen['f1'])
             return loss_cen
         else:
             return None
@@ -440,10 +441,10 @@ def _handle_finished_future_after_fit(
 
     failure = future.exception()
     if failure is not None:
-        print("Got a failure :(")
+        log(WARNING, "Got a failure :(")
         return
 
-    print("Got a result :)")
+    # print("Got a result :)")
     result: Tuple[ClientProxy, FitRes] = future.result()
     clientProxy, res = result
 
@@ -461,9 +462,9 @@ def _handle_finished_future_after_fit(
         # server.evaluate_centralized_async(history) # Evaluate the global model after the merge
 
     process_end = time()
-    log(DEBUG, f"Time taken to process the result: {process_end - process_start} seconds")    
+    # log(DEBUG, f"Time taken to process the result: {process_end - process_start} seconds")    
     if time() < end_timestamp:
-        log(DEBUG, f"Yippie! Starting the client {clientProxy.cid} again \U0001f973")
+        # log(DEBUG, f"Yippie! Starting the client {clientProxy.cid} again \U0001f973")
         new_ins = FitIns(server.parameters, server.get_config_for_client_fit(clientProxy.cid))
         ftr = executor.submit(fit_client, client=clientProxy, ins=new_ins, timeout=None)
         ftr.add_done_callback(lambda ftr: _handle_finished_future_after_fit(ftr, server, executor, end_timestamp, history))

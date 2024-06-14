@@ -61,7 +61,7 @@ class AsynchronousStrategy:
         if self.use_sample_weighing:
             alpha_coeff *= self.get_sample_weight_coeff(num_samples)
 
-        log(DEBUG, f"t_diff: {t_diff}\nalpha_coeff: {alpha_coeff}")
+        # log(DEBUG, f"t_diff: {t_diff}\nalpha_coeff: {alpha_coeff}")
 
         return [(1 - alpha_coeff) * layer_global + alpha_coeff * layer_update for layer_global, layer_update in zip(global_param_arr, model_update_param_arr)]
 

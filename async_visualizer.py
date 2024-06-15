@@ -43,11 +43,12 @@ class AsyncVisualizer:
         timestamps = self.extract_timestamps('accuracy')  # Assuming all metrics share the same timestamps
 
         metrics = [
-            ('accuracy', 'Accuracy'),
+            # ('accuracy', 'Accuracy'),
             ('loss', 'Loss'),
-            ('precision', 'Precision'),
-            ('recall', 'Recall'),
-            ('f1', 'F1')
+            # ('precision', 'Precision'),
+            # ('recall', 'Recall'),
+            ('f1', 'F1'),
+            ('accuracy_macro', 'Macro Accuracy'),
         ]
 
         num_metrics = len(metrics)
@@ -60,15 +61,15 @@ class AsyncVisualizer:
             self.plot_metric(ax, timestamps, metric_values, f'Centralized {metric_name}', 'Timestamp', metric_name)
 
         fig.suptitle(f'Centralized Metrics for setting:\n{self.tracker.dataset_name}, train_time: {self.tracker.total_train_time},'+ \
-                     f'epochs:{self.tracker.epochs},\npartitioning:{self.tracker.partitioning}, alpha:{self.tracker.alpha},' + \
-                     f'\nasync_aggregation_strategy:{self.tracker.async_aggregation_strategy}, max_workers:{self.tracker.max_workers}, waiting_interval:{self.tracker.waiting_interval}',
+                     f'epochs:{self.tracker.epochs},\n augmentation:{self.tracker.data_augmentation} ' + \
+                     f'async_aggregation_strategy:{self.tracker.async_aggregation_strategy}, mixing alpha:{self.tracker.fedasync_mixing_alpha}',
                        fontsize=12)
         plt.savefig(f'results/{folder_name}/centralized_metrics.png')
         plt.clf()
 
     def make_centralized_final_perclass_metrics_plot(self, folder_name: str):
         # Make a two subplots for final precision and recall per class and save it as a png
-        fig, axs = plt.subplots(1, 2, figsize=(15, 5))
+        fig, axs = plt.subplots(1, 3, figsize=(20, 5))
         x_axis = range(1, self.tracker.num_classes + 1)
         axs[0].bar(x_axis, self.tracker.history.metrics_centralized['precision_perclass'][-1][1])
         axs[0].set_title('Final Precision per class')
@@ -78,8 +79,12 @@ class AsyncVisualizer:
         axs[1].set_title('Final Recall per class')
         axs[1].set_xlabel('Class')
         axs[1].set_ylabel('Recall')
-        fig.suptitle(f'Final Metrics for setting:\n{self.tracker.dataset_name}, train_time: {self.tracker.total_train_time}, epochs:{self.tracker.epochs},\npartitioning:{self.tracker.partitioning}, alpha:{self.tracker.alpha}' + \
-            f'async_aggregation_strategy:{self.tracker.async_aggregation_strategy}, max_workers:{self.tracker.max_workers}, waiting_interval:{self.tracker.waiting_interval}')
+        axs[2].bar(x_axis, self.tracker.history.metrics_centralized['f1_perclass'][-1][1])
+        axs[2].set_title('Final F1 per class')
+        axs[2].set_xlabel('Class')
+        axs[2].set_ylabel('F1')
+        fig.suptitle(f'Final Metrics for setting:\n{self.tracker.dataset_name}, train_time: {self.tracker.total_train_time}, epochs:{self.tracker.epochs},\n' + \
+            f'async_aggregation_strategy:{self.tracker.async_aggregation_strategy}, Mixing_alpha: {self.tracker.fedasync_mixing_alpha}')
         plt.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
         plt.savefig('results/' + folder_name
                     + '/centralized_final_perclass_metrics.png')
@@ -90,8 +95,8 @@ class AsyncVisualizer:
         fig, ax = plt.subplots(figsize=(15, 10))
         df = pd.DataFrame(self.tracker.target_counts)
         df.plot(kind='bar', stacked=True, ax=ax)
-        ax.set_title(f'Target counts for setting:\n{self.tracker.dataset_name},  train_time: {self.tracker.total_train_time}, epochs:{self.tracker.epochs},\npartitioning:{self.tracker.partitioning}, alpha:{self.tracker.alpha}'  + \
-            f'async_aggregation_strategy:{self.tracker.async_aggregation_strategy}, max_workers:{self.tracker.max_workers}, waiting_interval:{self.tracker.waiting_interval}')
+        ax.set_title(f'Target counts for setting:\n{self.tracker.dataset_name},  train_time: {self.tracker.total_train_time}, epochs:{self.tracker.epochs},\ndata augmentation:{self.tracker.data_augmentation}'  + \
+            f'async_aggregation_strategy:{self.tracker.async_aggregation_strategy}, mixing alpha:{self.tracker.fedasync_mixing_alpha}')
         ax.set_xlabel('Client')
         ax.set_ylabel('Count')
         lgd = ax.legend(title='Class', bbox_to_anchor=(
@@ -195,6 +200,7 @@ class AsyncVisualizer:
         self.make_centralized_metrics_plot(folder_name)
         self.make_metrics_per_client_over_time_plot(folder_name, 'accuracy')
         self.make_metrics_per_client_over_time_plot(folder_name, 'precision')
+        self.make_metrics_per_client_over_time_plot(folder_name, 'f1')
         self.make_centralized_final_perclass_metrics_plot(folder_name)
         self.make_target_counts_plot(folder_name)
         self.make_interval_plot_async(folder_name)

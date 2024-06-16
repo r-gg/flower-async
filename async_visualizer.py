@@ -48,7 +48,7 @@ class AsyncVisualizer:
             # ('precision', 'Precision'),
             # ('recall', 'Recall'),
             ('f1', 'F1'),
-            ('accuracy_macro', 'Macro Accuracy'),
+            ('balanced_accuracy', 'Balanced Accuracy'),
         ]
 
         num_metrics = len(metrics)

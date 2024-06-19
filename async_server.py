@@ -14,7 +14,9 @@
 # ==============================================================================
 """Flower server."""
 
-
+import os
+import pickle
+from datetime import datetime
 import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock, Thread, Timer
@@ -154,9 +156,24 @@ class AsyncServer(Server):
         executor.shutdown(wait=True, cancel_futures=True)
         log(INFO, "FL finished")
         end_time = time()
+        self.save_model()
         elapsed = end_time - start_time
         log(INFO, "FL finished in %s", elapsed)
         return history
+    
+    def save_model(self):
+        # Save the model
+        timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        
+        model_path = f"models/model_async_{timestamp}.pkl"
+        if not os.path.exists("models"):
+            os.makedirs("models")
+        with open(model_path, "wb") as f:
+            log(DEBUG, "Saving model to %s", model_path)
+            pickle.dump(self.parameters, f)
+        log(INFO, "Model saved to %s", model_path)
+
+
 
     def evaluate_centralized(self, current_round: int, history: History):
         res_cen = self.strategy.evaluate(

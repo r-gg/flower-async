@@ -44,7 +44,7 @@ class AsyncVisualizer:
     def plot_final_centralized_confusion_matrix(self, folder_name: str):
         # Make a heatmap for the final confusion matrix and save it as a png
         fig, ax = plt.subplots(figsize=(10, 8))
-        sns.heatmap(self.tracker.history.metrics_centralized['confusion_matrix'][-1][1], annot=True, fmt='d', cmap='Blues', ax=ax, xticklabels=nice_goal_label_names, yticklabels=nice_goal_label_names)
+        sns.heatmap(self.tracker.history.metrics_centralized['confusion_matrix'][-1][1], annot=True, fmt='d', ax=ax, xticklabels=nice_goal_label_names, yticklabels=nice_goal_label_names)
         ax.set_title('Final Confusion Matrix')
         plt.savefig('results/' + folder_name + '/final_centralized_confusion_matrix.png')
         plt.clf()

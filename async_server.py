@@ -132,7 +132,7 @@ class AsyncServer(Server):
         )
 
         best_loss = float('inf')
-        patience_init = 10
+        patience_init = 10 # n times the `waiting interval` seconds
         patience = patience_init
         
         while time() - start_time < self.total_train_time:

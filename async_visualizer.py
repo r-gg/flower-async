@@ -7,6 +7,9 @@ import numpy as np
 from flwr.common import log 
 from logging import DEBUG
 from flwr.server.history import History
+import seaborn as sns
+
+nice_goal_label_names = ['WALKING', 'SITTING', 'STANDING', 'LYING_DOWN', 'RUNNING', 'BICYCLING']
 
 
 def extract_vals_from_metrics(metrics: List[Tuple[int, Any]]):
@@ -37,6 +40,14 @@ class AsyncVisualizer:
         ax.set_title(title)
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
+
+    def plot_final_centralized_confusion_matrix(self, folder_name: str):
+        # Make a heatmap for the final confusion matrix and save it as a png
+        fig, ax = plt.subplots(figsize=(10, 8))
+        sns.heatmap(self.tracker.history.metrics_centralized['confusion_matrix'][-1][1], annot=True, fmt='d', cmap='Blues', ax=ax, xticklabels=nice_goal_label_names, yticklabels=nice_goal_label_names)
+        ax.set_title('Final Confusion Matrix')
+        plt.savefig('results/' + folder_name + '/final_centralized_confusion_matrix.png')
+        plt.clf()
 
     def make_centralized_metrics_plot(self, folder_name: str):
         plt.style.use('seaborn-v0_8-whitegrid')
@@ -204,6 +215,7 @@ class AsyncVisualizer:
         self.make_centralized_final_perclass_metrics_plot(folder_name)
         self.make_target_counts_plot(folder_name)
         self.make_interval_plot_async(folder_name)
+        self.plot_final_centralized_confusion_matrix(folder_name)
 
 
     

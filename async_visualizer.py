@@ -220,6 +220,23 @@ class AsyncVisualizer:
             plt.savefig(f'results/{folder_name}/f1_over_time_heatmap.png')
             plt.clf()
         
+    def make_f1_for_running_class_and_other_classes(self, folder_name: str):
+        f1_pc = np.array([np.array(f1s) for ts, f1s in self.tracker.history.metrics_centralized['f1_perclass']])
+        sns.heatmap(f1_pc)
+        plt.xticks(np.arange(6)+0.5, nice_goal_label_names, rotation=90)
+        plt.ylabel('Time')
+        plt.xlabel('Class')
+        plt.title('Centralized per-class F1-Scores over time')
+        plt.savefig(f'results/{folder_name}/f1_perclass_over_time.png')
+        plt.clf()
+
+        plt.plot(f1_pc[:, 4])
+        plt.title('F1 score of the running class over time')
+        plt.xlabel('Time')
+        plt.ylabel('F1-Score')
+        plt.savefig(f'results/{folder_name}/f1_running_class_over_time.png')
+        plt.clf()
+
     def make_config_specific_visualizations(self, folder_name: str):
         plt.style.use('seaborn-v0_8-whitegrid')
         # Make four subplots in one representing centralized accuracy, loss, precision, recall and save it as a png
@@ -232,6 +249,7 @@ class AsyncVisualizer:
         self.make_interval_plot_async(folder_name)
         self.plot_final_centralized_confusion_matrix(folder_name)
         self.make_f1_over_time_heatmap(folder_name)
+        self.make_f1_for_running_class_and_other_classes(folder_name)
 
 
     

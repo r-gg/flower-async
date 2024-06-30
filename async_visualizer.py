@@ -8,6 +8,7 @@ from flwr.common import log
 from logging import DEBUG
 from flwr.server.history import History
 import seaborn as sns
+import glob
 
 nice_goal_label_names = ['WALKING', 'SITTING', 'STANDING', 'LYING_DOWN', 'RUNNING', 'BICYCLING']
 
@@ -204,6 +205,20 @@ class AsyncVisualizer:
         plt.savefig('results/' + folder_name + '/intervals.png')
         plt.clf()
 
+    def make_f1_over_time_heatmap(self, folder_name: str):
+        if getattr(self.tracker, 'id', None) is not None:
+            id = self.tracker.id
+            # Load all .npy files from a directory
+            npy_files = glob.glob(f'f1_scores/{id}/*.npy')
+            npy_files.sort()
+            f1_scores = np.array([np.array(np.load(file, allow_pickle=True), dtype=np.float32) for file in npy_files])
+            plt.figure(figsize=(20,10))
+            sns.heatmap(f1_scores)
+            plt.title('F1_scores over time per client')
+            plt.ylabel('Time')
+            plt.xlabel('Client')
+            plt.savefig(f'results/{folder_name}/f1_over_time_heatmap.png')
+            plt.clf()
         
     def make_config_specific_visualizations(self, folder_name: str):
         plt.style.use('seaborn-v0_8-whitegrid')
@@ -216,6 +231,7 @@ class AsyncVisualizer:
         self.make_target_counts_plot(folder_name)
         self.make_interval_plot_async(folder_name)
         self.plot_final_centralized_confusion_matrix(folder_name)
+        self.make_f1_over_time_heatmap(folder_name)
 
 
     

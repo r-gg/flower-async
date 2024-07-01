@@ -89,8 +89,6 @@ class AsyncServer(Server):
         self.start_timestamp = 0.0
         self.end_timestamp = 0.0
 
-        # super().__init__(*args, strategy=strategy, client_manager=client_manager)
-
     def set_new_params(self, new_params: Parameters):
         lock = Lock()
         with lock:
@@ -192,18 +190,6 @@ class AsyncServer(Server):
         else:
             return None
 
-    def evaluate_centralized_async(self, history: AsyncHistory):
-        res_cen = self.strategy.evaluate(
-            0, parameters=self.parameters)
-        if res_cen is not None:
-            loss_cen, metrics_cen = res_cen
-            metrics_cen['end_timestamp'] = self.end_timestamp
-            metrics_cen['start_timestamp'] = self.start_timestamp
-            history.add_loss_centralized_async(
-                timestamp=time(), loss=loss_cen)
-            history.add_metrics_centralized_async(
-                timestamp=time(), metrics=metrics_cen
-            )
 
     def evaluate_decentralized(self, current_round: int, history: History, timeout: Optional[float]):
         """Evaluate model on a sample of available clients
@@ -453,9 +439,9 @@ def _handle_finished_future_after_fit(
     end_timestamp: float,
     history: AsyncHistory,
 ) -> None:
-    """Convert finished future into either a result or a failure."""
+    """Update the server parameters, restart the client."""
+    
     # Check if there was an exception
-
     failure = future.exception()
     if failure is not None:
         log(WARNING, "Got a failure :(")

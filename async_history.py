@@ -2,6 +2,8 @@
 A wrapper around the flower History class that offers centralized and distributed metrics per timestamp instead of per round.
 It also groups distributed_fit metrics per client instead of per client instead of per round.
 
+losses_centralized: [ (timestamp1, value1) , .... ]
+
 metrics_centralized: {
     "accuracy": [ (timestamp1, value1) , .... ]
 }
@@ -9,7 +11,7 @@ metrics_distributed: {
     "client_ids": [ (timestamp1, [cid1, cid2, cid3]) ... ]
     "accuracy": [ (timestamp1, [value1, value2, value3]) , .... ]
 } 
-metrics_distributed_fit: {
+metrics_distributed_fit_async: {
     "accuracy": { 
         cid1: [
             (timestamp1, value1), 
@@ -21,7 +23,10 @@ metrics_distributed_fit: {
     }
     ...
 }
-# Metrics collected after each merge into the global model. (Global model evaluated centrally after merge.)
+# Metrics collected after each merge into the global model. (Global model evaluated centrally after merge.) 
+
+DEPRECATED: This takes too much time and serializes the training process. Will be removed in the future.
+
 metrics_centralized_async: {
     "accuracy": [ (timestamp1, value1) , .... ]
 }

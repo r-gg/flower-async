@@ -72,8 +72,8 @@ class AsyncVisualizer:
             metric_values = extract_vals_from_metrics(self.tracker.history.metrics_centralized.get(metric_key, []))
             self.plot_metric(ax, timestamps, metric_values, f'Centralized {metric_name}', 'Timestamp', metric_name)
 
-        fig.suptitle(f'Centralized Metrics for setting:\n{self.tracker.dataset_name}, train_time: {self.tracker.total_train_time},'+ \
-                     f'epochs:{self.tracker.epochs},\n augmentation:{self.tracker.data_augmentation} ' + \
+        fig.suptitle(f'Centralized Metrics, asynchronous setting:\n{self.tracker.dataset_name}, train_time: {self.tracker.total_train_time},'+ \
+                     f',\naugmentation:{self.tracker.data_augmentation} ' + \
                      f'async_aggregation_strategy:{self.tracker.async_aggregation_strategy}, mixing alpha:{self.tracker.fedasync_mixing_alpha}',
                        fontsize=12)
         plt.savefig(f'results/{folder_name}/centralized_metrics.png')
@@ -95,7 +95,7 @@ class AsyncVisualizer:
         axs[2].set_title('Final F1 per class')
         axs[2].set_xlabel('Class')
         axs[2].set_ylabel('F1')
-        fig.suptitle(f'Final Metrics for setting:\n{self.tracker.dataset_name}, train_time: {self.tracker.total_train_time}, epochs:{self.tracker.epochs},\n' + \
+        fig.suptitle(f'Final Metrics for setting:\n{self.tracker.dataset_name}, train_time: {self.tracker.total_train_time},\n' + \
             f'async_aggregation_strategy:{self.tracker.async_aggregation_strategy}, Mixing_alpha: {self.tracker.fedasync_mixing_alpha}')
         plt.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
         plt.savefig('results/' + folder_name
@@ -107,7 +107,7 @@ class AsyncVisualizer:
         fig, ax = plt.subplots(figsize=(15, 10))
         df = pd.DataFrame(self.tracker.target_counts)
         df.plot(kind='bar', stacked=True, ax=ax)
-        ax.set_title(f'Target counts for setting:\n{self.tracker.dataset_name},  train_time: {self.tracker.total_train_time}, epochs:{self.tracker.epochs},\ndata augmentation:{self.tracker.data_augmentation}'  + \
+        ax.set_title(f'Target counts for setting:\n{self.tracker.dataset_name},  train_time: {self.tracker.total_train_time},\ndata augmentation:{self.tracker.data_augmentation}'  + \
             f'async_aggregation_strategy:{self.tracker.async_aggregation_strategy}, mixing alpha:{self.tracker.fedasync_mixing_alpha}')
         ax.set_xlabel('Client')
         ax.set_ylabel('Count')
@@ -146,7 +146,7 @@ class AsyncVisualizer:
         num_rows = int(math.ceil(n / num_cols))
         
         fig, axs = plt.subplots(num_rows, num_cols, figsize=(5 * num_cols, 5 * num_rows), constrained_layout=True)
-        fig.suptitle(f'{metric_name.capitalize()} per client over time (before training) for setting:\n{self.tracker.dataset_name}, train_time: {self.tracker.total_train_time}, epochs:{self.tracker.epochs},\npartitioning:{self.tracker.partitioning}, alpha:{self.tracker.alpha},\nasync_aggregation_strategy:{self.tracker.async_aggregation_strategy}, max_workers:{self.tracker.max_workers}, waiting_interval:{self.tracker.waiting_interval}' + title_suffix)
+        fig.suptitle(f'{metric_name.capitalize()} per client over time (before training) for setting:\n{self.tracker.dataset_name}, train_time: {self.tracker.total_train_time},\nasync_aggregation_strategy:{self.tracker.async_aggregation_strategy}' + title_suffix)
         axs = axs.flatten()
 
         for i in range(n):

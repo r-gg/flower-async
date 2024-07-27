@@ -23,6 +23,7 @@ from threading import Lock, Thread, Timer
 from logging import DEBUG, INFO, WARNING
 from typing import Dict, List, Optional, Tuple, Union
 from time import sleep, time
+import numpy as np
 
 from flwr.common import (
     Code,
@@ -75,6 +76,7 @@ class AsyncServer(Server):
         total_train_time: int = 85,
         waiting_interval: int = 5,
         max_workers: int = 2,
+        server_artificial_delay: bool = False,
     ):
         self.async_strategy = async_strategy
         self.total_train_time = total_train_time
@@ -88,13 +90,29 @@ class AsyncServer(Server):
             setattr(self, key, value)
         self.start_timestamp = 0.0
         self.end_timestamp = 0.0
+        self.model_param_lock = Lock()
+        self.server_artificial_delay = server_artificial_delay
+
+        self.client_iters = np.zeros(60)
+        if self.client_local_delay:
+            np.random.seed(self.dataset_seed)
+            n_clients_with_delay = 12
+            self.clients_with_delay = np.random.choice(n_clients_with_delay, n_clients_with_delay, replace=False)
+            self.delays_per_iter_per_client = np.random.uniform(0.0, 5.0, (1000, n_clients_with_delay))
+
+
 
     def set_new_params(self, new_params: Parameters):
-        lock = Lock()
-        with lock:
+        with self.model_param_lock:
             self.parameters = new_params
 
     # pylint: disable=too-many-locals
+
+    def busy_wait(self, seconds: float) -> None:
+        """Busy wait for a number of seconds."""
+        start_time = time()
+        while time() - start_time < seconds:
+            pass
 
     def fit(self, num_rounds: int, timeout: Optional[float]) -> History:
         """Run federated averaging for a number of rounds."""
@@ -138,6 +156,8 @@ class AsyncServer(Server):
         while time() - start_time < self.total_train_time:
             # If the clients are to be started periodically, move fit_round here and remove the executor.submit lines from _handle_finished_future_after_fit
             sleep(self.waiting_interval)
+            if self.server_artificial_delay:
+                self.busy_wait(10)
             loss = self.evaluate_centralized(counter, history)
             if loss is not None:
                 if loss < best_loss - 1e-4:
@@ -300,8 +320,14 @@ class AsyncServer(Server):
             history=history,
         )
 
-    def get_config_for_client_fit(self, client_id):
+    def get_config_for_client_fit(self, client_id, iter=0):
         config = {}
+
+        if self.client_local_delay and client_id in self.clients_with_delay:
+            config['client_delay'] = self.delays_per_iter_per_client[iter, np.where(self.clients_with_delay == client_id)[0][0]]
+            config['cid'] = client_id
+            return config
+
         if not self.is_streaming:
             return config
         curr_timestamp = time()
@@ -462,7 +488,9 @@ def _handle_finished_future_after_fit(
 
     if time() < end_timestamp:
         # log(DEBUG, f"Yippie! Starting the client {clientProxy.cid} again \U0001f973")
-        new_ins = FitIns(server.parameters, server.get_config_for_client_fit(clientProxy.cid))
+        iter = server.client_iters[int(clientProxy.cid)] + 1
+        server.client_iters[int(clientProxy.cid)] = iter
+        new_ins = FitIns(server.parameters, server.get_config_for_client_fit(clientProxy.cid, iter=iter))
         ftr = executor.submit(fit_client, client=clientProxy, ins=new_ins, timeout=None)
         ftr.add_done_callback(lambda ftr: _handle_finished_future_after_fit(ftr, server, executor, end_timestamp, history))
 

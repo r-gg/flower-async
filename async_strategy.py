@@ -1,3 +1,6 @@
+import os
+import numpy as np
+import pickle
 import math
 from flwr.common import Parameters
 import flwr.server.strategy.aggregate as agg
@@ -5,13 +8,13 @@ from flwr.common import parameters_to_ndarrays, ndarrays_to_parameters
 from typing import List, Tuple
 from flwr.common import NDArrays, log
 from logging import DEBUG, WARNING
-
+from time import time
 
 class AsynchronousStrategy:
     """Abstract base class for all asynchronous strategies."""
 
     def __init__(self, total_samples: int, staleness_alpha: float, fedasync_mixing_alpha: float, fedasync_a: float, num_clients: int, async_aggregation_strategy: str,
-                 use_staleness: bool, use_sample_weighing: bool, send_gradients: bool) -> None:
+                 use_staleness: bool, use_sample_weighing: bool, send_gradients: bool, server_artificial_delay: bool) -> None:
         self.total_samples = total_samples
         self.staleness_alpha = staleness_alpha
         self.fedasync_a = fedasync_a
@@ -21,6 +24,8 @@ class AsynchronousStrategy:
         self.use_staleness = use_staleness
         self.use_sample_weighing = use_sample_weighing
         self.send_gradients = send_gradients
+        self.server_artificial_delay = server_artificial_delay
+
 
     def average(self, global_parameters: Parameters, model_update_parameters: Parameters, t_diff: float, num_samples: int) -> Parameters:
         """Compute the average of the global and client parameters."""
@@ -54,6 +59,13 @@ class AsynchronousStrategy:
         """Compute the weighted average of the global and client parameters. Inspired by the paper Fedasync : https://arxiv.org/pdf/1903.03934.pdf"""
         return ndarrays_to_parameters(self.aggregate_fedasync(parameters_to_ndarrays(global_parameters), parameters_to_ndarrays(model_update_parameters), t_diff, num_samples=num_samples))
 
+    def busy_wait(self, seconds: float) -> None:
+        """Busy wait for the specified number of seconds."""
+        start = time()
+        while time() - start < seconds:
+            pass
+
+
     def aggregate_fedasync(self, global_param_arr: NDArrays, model_update_param_arr: NDArrays, t_diff: float, num_samples: int) -> NDArrays:
         """Compute weighted average with the formula params_new = (1-alpha) * params_old + alpha * (model_update_params)"""
         # Calculate the total number of examples used during training
@@ -63,7 +75,9 @@ class AsynchronousStrategy:
                 t_diff=t_diff)
         if self.use_sample_weighing:
             alpha_coeff *= self.get_sample_weight_coeff(num_samples)
-
+        
+        if self.server_artificial_delay:
+            self.busy_wait(0.5)
         # log(DEBUG, f"t_diff: {t_diff}\nalpha_coeff: {alpha_coeff}")
 
         return [(1 - alpha_coeff) * layer_global + alpha_coeff * layer_update for layer_global, layer_update in zip(global_param_arr, model_update_param_arr)]
@@ -72,6 +86,8 @@ class AsynchronousStrategy:
         """Add gradients to the global model. Inspired by the paper Fedasync : https://arxiv.org/pdf/1903.03934.pdf
         It is not however the same procedure as in original paper, because they aggregate MODELS and we aggregate GRADIENTS.
         """
+        if self.server_artificial_delay:
+            self.busy_wait(1)
         return ndarrays_to_parameters(self.add_grads_fedasync(parameters_to_ndarrays(global_parameters), parameters_to_ndarrays(gradients), t_diff, num_samples=num_samples))
 
     def add_grads_fedasync(self, global_param_arr: NDArrays, gradients_arr: NDArrays, t_diff: float, num_samples: int) -> NDArrays:

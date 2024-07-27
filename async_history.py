@@ -49,29 +49,29 @@ class AsyncHistory(History):
         self, client_id: str, metrics: Dict[str, Scalar], timestamp: float
     ) -> None:
         """Add metrics entries (from distributed fit)."""
-        lock = Lock()
-        with lock:
-            for key in metrics:
-                if key not in self.metrics_distributed_fit_async:
-                    self.metrics_distributed_fit_async[key] = {}
-                if client_id not in self.metrics_distributed_fit_async[key]:
-                    self.metrics_distributed_fit_async[key][client_id] = []
-                self.metrics_distributed_fit_async[key][client_id].append((timestamp, metrics[key]))
+        # lock = Lock()
+        # with lock:
+        for key in metrics:
+            if key not in self.metrics_distributed_fit_async:
+                self.metrics_distributed_fit_async[key] = {}
+            if client_id not in self.metrics_distributed_fit_async[key]:
+                self.metrics_distributed_fit_async[key][client_id] = []
+            self.metrics_distributed_fit_async[key][client_id].append((timestamp, metrics[key]))
 
     def add_metrics_centralized_async(self, metrics: Dict[str, Scalar], timestamp: float) -> None:
         """Add metrics entries (from centralized evaluation)."""
-        lock = Lock()
-        with lock:
-            for metric in metrics:
-                if metric not in self.metrics_centralized_async:
-                    self.metrics_centralized_async[metric] = []
-                self.metrics_centralized_async[metric].append((timestamp, metrics[metric]))
+        # lock = Lock()
+        # with lock:
+        for metric in metrics:
+            if metric not in self.metrics_centralized_async:
+                self.metrics_centralized_async[metric] = []
+            self.metrics_centralized_async[metric].append((timestamp, metrics[metric]))
 
     def add_loss_centralized_async(self, timestamp: float, loss: float) -> None:
         """Add loss entries (from centralized evaluation)."""
-        lock = Lock()
-        with lock:
-            self.losses_centralized_async.append((timestamp, loss))
+        # lock = Lock()
+        # with lock:
+        self.losses_centralized_async.append((timestamp, loss))
 
     def add_loss_centralized(self, timestamp: float, loss: float) -> None:
         return super().add_loss_centralized(timestamp, loss)

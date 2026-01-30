@@ -12,14 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Flower server."""
+"""Flower server for asynchronous federated learning."""
 
 import os
 import pickle
 from datetime import datetime
 import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor
-from threading import Lock, Thread, Timer
+from threading import Lock
 from logging import DEBUG, INFO, WARNING
 from typing import Dict, List, Optional, Tuple, Union
 from time import sleep, time
@@ -35,20 +35,28 @@ from flwr.common import (
     Parameters,
     ReconnectIns,
     Scalar,
+    GetParametersIns,
+    ndarrays_to_parameters,
+    parameters_to_ndarrays,
 )
 from flwr.common.logger import log
-from flwr.common.typing import GetParametersIns, FitIns
-from flwr.common import parameters_to_ndarrays, ndarrays_to_parameters
 from flwr.server.client_manager import ClientManager
 from flwr.server.client_proxy import ClientProxy
 from flwr.server.history import History
 from flwr.server.strategy import FedAvg, Strategy
-import flwr.server.strategy.aggregate as agg
+from flwr.server.strategy.aggregate import aggregate
 from flwr.server.server import Server
-from flower_async.async_history import AsyncHistory
 
-from flower_async.async_client_manager import AsyncClientManager
-from flower_async.async_strategy import AsynchronousStrategy
+try:
+    # When used as an installed package
+    from .async_history import AsyncHistory
+    from .async_client_manager import AsyncClientManager
+    from .async_strategy import AsynchronousStrategy
+except ImportError:
+    # When imported directly from the directory
+    from async_history import AsyncHistory
+    from async_client_manager import AsyncClientManager
+    from async_strategy import AsynchronousStrategy
 
 FitResultsAndFailures = Tuple[
     List[Tuple[ClientProxy, FitRes]],
@@ -70,7 +78,7 @@ class AsyncServer(Server):
     def __init__(
         self,
         strategy: Strategy,
-        client_manager: ClientManager, # AsyncClientManager,
+        client_manager: ClientManager,  # AsyncClientManager,
         async_strategy: AsynchronousStrategy,
         base_conf_dict,
         total_train_time: int = 85,
@@ -85,7 +93,9 @@ class AsyncServer(Server):
         self.strategy = strategy
         self._client_manager = client_manager
         self.max_workers = max_workers
-        self.client_data_percs: Dict[str, List[float]] = {} # dictionary tracking the data percentages sent to the client
+        self.client_data_percs: Dict[str, List[float]] = (
+            {}
+        )  # dictionary tracking the data percentages sent to the client
         for key, value in base_conf_dict.items():
             setattr(self, key, value)
         self.start_timestamp = 0.0
@@ -97,10 +107,12 @@ class AsyncServer(Server):
         if self.client_local_delay:
             np.random.seed(self.dataset_seed)
             n_clients_with_delay = 12
-            self.clients_with_delay = np.random.choice(n_clients_with_delay, n_clients_with_delay, replace=False)
-            self.delays_per_iter_per_client = np.random.uniform(0.0, 5.0, (1000, n_clients_with_delay))
-
-
+            self.clients_with_delay = np.random.choice(
+                n_clients_with_delay, n_clients_with_delay, replace=False
+            )
+            self.delays_per_iter_per_client = np.random.uniform(
+                0.0, 5.0, (1000, n_clients_with_delay)
+            )
 
     def set_new_params(self, new_params: Parameters):
         with self.model_param_lock:
@@ -114,7 +126,7 @@ class AsyncServer(Server):
         while time() - start_time < seconds:
             pass
 
-    def fit(self, num_rounds: int, timeout: Optional[float]) -> History:
+    def fit(self, num_rounds: int, timeout: Optional[float]) -> Tuple[History, float]:
         """Run federated averaging for a number of rounds."""
         history = AsyncHistory()
 
@@ -130,8 +142,12 @@ class AsyncServer(Server):
                 res[0],
                 res[1],
             )
-            history.add_loss_centralized(timestamp=time(), loss=res[0])
-            history.add_metrics_centralized(timestamp=time(), metrics=res[1])
+            # Use server_round=0 for initial evaluation (compatible with flwr 1.25.0+)
+            history.add_loss_centralized(server_round=0, loss=res[0])
+            history.add_metrics_centralized(server_round=0, metrics=res[1])
+            # Also track with timestamp for async history
+            history.add_loss_centralized_async(timestamp=time(), loss=res[0])
+            history.add_metrics_centralized_async(metrics=res[1], timestamp=time())
 
         # Run federated learning for num_rounds
         log(INFO, "FL starting")
@@ -146,13 +162,13 @@ class AsyncServer(Server):
             timeout=timeout,
             executor=executor,
             end_timestamp=end_timestamp,
-            history=history
+            history=history,
         )
 
-        best_loss = float('inf')
-        patience_init = 50 # n times the `waiting interval` seconds
+        best_loss = float("inf")
+        patience_init = 50  # n times the `waiting interval` seconds
         patience = patience_init
-        
+
         while time() - start_time < self.total_train_time:
             # If the clients are to be started periodically, move fit_round here and remove the executor.submit lines from _handle_finished_future_after_fit
             sleep(self.waiting_interval)
@@ -168,7 +184,7 @@ class AsyncServer(Server):
                 if patience == 0:
                     log(INFO, "Early stopping")
                     break
-            #self.evaluate_decentralized(counter, history, timeout)
+            # self.evaluate_decentralized(counter, history, timeout)
             counter += 1
 
         executor.shutdown(wait=True, cancel_futures=True)
@@ -177,12 +193,12 @@ class AsyncServer(Server):
         self.save_model()
         elapsed = end_time - start_time
         log(INFO, "FL finished in %s", elapsed)
-        return history
-    
-    def save_model(self):
-        # Save the model
+        return history, elapsed
+
+    def save_model(self) -> None:
+        """Save the model to a file."""
         timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-        
+
         model_path = f"models/model_async_{timestamp}.pkl"
         if not os.path.exists("models"):
             os.makedirs("models")
@@ -191,45 +207,67 @@ class AsyncServer(Server):
             pickle.dump(self.parameters, f)
         log(INFO, "Model saved to %s", model_path)
 
+    def evaluate_centralized(
+        self, current_round: int, history: AsyncHistory
+    ) -> Optional[float]:
+        """Evaluate the current model using centralized evaluation.
 
+        Args:
+            current_round: The current round number
+            history: The AsyncHistory object to store metrics
 
-    def evaluate_centralized(self, current_round: int, history: History):
-        res_cen = self.strategy.evaluate(
-            current_round, parameters=self.parameters)
+        Returns:
+            The loss value if evaluation was successful, None otherwise
+        """
+        res_cen = self.strategy.evaluate(current_round, parameters=self.parameters)
         if res_cen is not None:
             loss_cen, metrics_cen = res_cen
-            metrics_cen['end_timestamp'] = self.end_timestamp
-            metrics_cen['start_timestamp'] = self.start_timestamp
-            history.add_loss_centralized(
-                timestamp=time(), loss=loss_cen)
+            metrics_cen["end_timestamp"] = self.end_timestamp
+            metrics_cen["start_timestamp"] = self.start_timestamp
+            # Use server_round for standard History API (flwr 1.25.0+)
+            history.add_loss_centralized(server_round=current_round, loss=loss_cen)
             history.add_metrics_centralized(
-                timestamp=time(), metrics=metrics_cen
+                server_round=current_round, metrics=metrics_cen
             )
-            log(INFO, "Centralized evaluation: loss %s, f1=%s", loss_cen, metrics_cen['f1'])
+            # Also track with timestamp for async history
+            history.add_loss_centralized_async(timestamp=time(), loss=loss_cen)
+            history.add_metrics_centralized_async(metrics=metrics_cen, timestamp=time())
+            log(
+                INFO,
+                "Centralized evaluation: loss %s, f1=%s",
+                loss_cen,
+                metrics_cen.get("f1", "N/A"),
+            )
             return loss_cen
         else:
             return None
 
+    def evaluate_decentralized(
+        self, current_round: int, history: AsyncHistory, timeout: Optional[float]
+    ) -> None:
+        """Evaluate model on a sample of available clients.
 
-    def evaluate_decentralized(self, current_round: int, history: History, timeout: Optional[float]):
-        """Evaluate model on a sample of available clients
         NOTE: Only call this method if clients are started periodically.
-        This is not to be called if the clients are starting immediately after they finish! This is because the ray actor cannot process
-        two concurrent requests to the same client. They get mixed up and future.result() in client_fit can return an
-        EvaluateRes instead of FitRes.
+        This is not to be called if the clients are starting immediately after
+        they finish! This is because the ray actor cannot process two concurrent
+        requests to the same client. They get mixed up and future.result() in
+        client_fit can return an EvaluateRes instead of FitRes.
+
+        Args:
+            current_round: The current round number
+            history: The AsyncHistory object to store metrics
+            timeout: Optional timeout for client communication
         """
-        res_fed = self.evaluate_round(
-            server_round=current_round, timeout=timeout)
+        res_fed = self.evaluate_round(server_round=current_round, timeout=timeout)
         if res_fed is not None:
             loss_fed, evaluate_metrics_fed, (results, _) = res_fed
             if loss_fed is not None:
                 client_ids = [client.cid for client, _ in results]
-                evaluate_metrics_fed['client_ids'] = client_ids
-                history.add_loss_distributed(
-                    timestamp=time(), loss=loss_fed
-                )
+                evaluate_metrics_fed["client_ids"] = client_ids
+                # Use server_round for standard History API (flwr 1.25.0+)
+                history.add_loss_distributed(server_round=current_round, loss=loss_fed)
                 history.add_metrics_distributed(
-                    timestamp=time(), metrics=evaluate_metrics_fed
+                    server_round=current_round, metrics=evaluate_metrics_fed
                 )
 
     def evaluate_round(
@@ -297,7 +335,10 @@ class AsyncServer(Server):
             client_manager=self._client_manager,
         )
         for client_proxy, fitins in client_instructions:
-            fitins.config = { **fitins.config, **self.get_config_for_client_fit(client_proxy.cid) }
+            fitins.config = {
+                **fitins.config,
+                **self.get_config_for_client_fit(client_proxy.cid),
+            }
 
         if not client_instructions:
             log(INFO, "fit_round %s: no clients selected, cancel", server_round)
@@ -324,8 +365,10 @@ class AsyncServer(Server):
         config = {}
 
         if self.client_local_delay and client_id in self.clients_with_delay:
-            config['client_delay'] = self.delays_per_iter_per_client[iter, np.where(self.clients_with_delay == client_id)[0][0]]
-            config['cid'] = client_id
+            config["client_delay"] = self.delays_per_iter_per_client[
+                iter, np.where(self.clients_with_delay == client_id)[0][0]
+            ]
+            config["cid"] = client_id
             return config
 
         if not self.is_streaming:
@@ -334,15 +377,21 @@ class AsyncServer(Server):
         if curr_timestamp > self.end_timestamp:
             return config
         if client_id not in self.client_data_percs:
-            self.client_data_percs[client_id] = [0.0] # Clients start with 10% of the data (otherwise called with 0 samples)
+            self.client_data_percs[client_id] = [
+                0.0
+            ]  # Clients start with 10% of the data (otherwise called with 0 samples)
         prev_data_perc = self.client_data_percs[client_id][-1]
         start_timestamp = self.end_timestamp - self.total_train_time
-        data_perc = ( (time() - start_timestamp) / self.total_train_time ) * 0.9 + 0.1 # Linearly increase the data percentage from 10% to 100% over the total_train_time
-        config['data_percentage'] = data_perc
-        config['prev_data_percentage'] = prev_data_perc
-        config['data_loading_strategy'] = self.data_loading_strategy
-        if self.data_loading_strategy == 'fixed_nr':
-            config['n_last_samples_for_data_loading_fit'] = self.n_last_samples_for_data_loading_fit
+        data_perc = (
+            (time() - start_timestamp) / self.total_train_time
+        ) * 0.9 + 0.1  # Linearly increase the data percentage from 10% to 100% over the total_train_time
+        config["data_percentage"] = data_perc
+        config["prev_data_percentage"] = prev_data_perc
+        config["data_loading_strategy"] = self.data_loading_strategy
+        if self.data_loading_strategy == "fixed_nr":
+            config["n_last_samples_for_data_loading_fit"] = (
+                self.n_last_samples_for_data_loading_fit
+            )
         self.client_data_percs[client_id].append(data_perc)
         return config
 
@@ -351,8 +400,7 @@ class AsyncServer(Server):
         all_clients = self._client_manager.all()
         clients = [all_clients[k] for k in all_clients.keys()]
         instruction = ReconnectIns(seconds=None)
-        client_instructions = [(client_proxy, instruction)
-                               for client_proxy in clients]
+        client_instructions = [(client_proxy, instruction) for client_proxy in clients]
         _ = reconnect_clients(
             client_instructions=client_instructions,
             max_workers=self.max_workers,
@@ -373,8 +421,7 @@ class AsyncServer(Server):
         log(INFO, "Requesting initial parameters from one random client")
         random_client = self._client_manager.sample(1)[0]
         ins = GetParametersIns(config={})
-        get_parameters_res = random_client.get_parameters(
-            ins=ins, timeout=timeout)
+        get_parameters_res = random_client.get_parameters(ins=ins, timeout=timeout)
         log(INFO, "Received initial parameters from one random client")
         return get_parameters_res.parameters
 
@@ -398,8 +445,7 @@ def reconnect_clients(
 
     # Gather results
     results: List[Tuple[ClientProxy, DisconnectRes]] = []
-    failures: List[Union[Tuple[ClientProxy,
-                               DisconnectRes], BaseException]] = []
+    failures: List[Union[Tuple[ClientProxy, DisconnectRes], BaseException]] = []
     for future in finished_fs:
         failure = future.exception()
         if failure is not None:
@@ -425,9 +471,7 @@ def reconnect_client(
 
 def handle_futures(futures, server):
     for future in futures:
-        _handle_finished_future_after_fit(
-            future=future, server=server
-        )
+        _handle_finished_future_after_fit(future=future, server=server)
 
 
 def fit_clients(
@@ -446,7 +490,13 @@ def fit_clients(
     }
     for f in submitted_fs:
         f.add_done_callback(
-            lambda ftr: _handle_finished_future_after_fit(ftr, server=server, executor=executor, end_timestamp=end_timestamp, history=history),
+            lambda ftr: _handle_finished_future_after_fit(
+                ftr,
+                server=server,
+                executor=executor,
+                end_timestamp=end_timestamp,
+                history=history,
+            ),
         )
 
 
@@ -466,7 +516,7 @@ def _handle_finished_future_after_fit(
     history: AsyncHistory,
 ) -> None:
     """Update the server parameters, restart the client."""
-    
+
     # Check if there was an exception
     failure = future.exception()
     if failure is not None:
@@ -479,23 +529,34 @@ def _handle_finished_future_after_fit(
 
     if res.status.code == Code.OK:
         parameters_aggregated = server.async_strategy.average(
-            server.parameters, res.parameters, res.metrics['t_diff'], res.num_examples)
+            server.parameters, res.parameters, res.metrics["t_diff"], res.num_examples
+        )
         server.set_new_params(parameters_aggregated)
-        
+
         history.add_metrics_distributed_fit_async(
-            clientProxy.cid,{"sample_sizes": res.num_examples, **res.metrics }, timestamp=time()
+            clientProxy.cid,
+            {"sample_sizes": res.num_examples, **res.metrics},
+            timestamp=time(),
         )
 
     if time() < end_timestamp:
         # log(DEBUG, f"Yippie! Starting the client {clientProxy.cid} again \U0001f973")
         iter = server.client_iters[int(clientProxy.cid)] + 1
         server.client_iters[int(clientProxy.cid)] = iter
-        new_ins = FitIns(server.parameters, server.get_config_for_client_fit(clientProxy.cid, iter=iter))
+        new_ins = FitIns(
+            server.parameters,
+            server.get_config_for_client_fit(clientProxy.cid, iter=iter),
+        )
         ftr = executor.submit(fit_client, client=clientProxy, ins=new_ins, timeout=None)
-        ftr.add_done_callback(lambda ftr: _handle_finished_future_after_fit(ftr, server, executor, end_timestamp, history))
+        ftr.add_done_callback(
+            lambda ftr: _handle_finished_future_after_fit(
+                ftr, server, executor, end_timestamp, history
+            )
+        )
 
 
 ############################### FOR EVALUATION ####################################
+
 
 def evaluate_clients(
     client_instructions: List[Tuple[ClientProxy, EvaluateIns]],
